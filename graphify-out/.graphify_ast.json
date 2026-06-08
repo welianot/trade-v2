@@ -1,0 +1,1437 @@
+{
+  "nodes": [
+    {
+      "id": "back_test",
+      "label": "back_test.py",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "back_test_get_exchange",
+      "label": "get_exchange()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "source_location": "L77"
+    },
+    {
+      "id": "back_test_fetch_ohlcv",
+      "label": "fetch_ohlcv()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "source_location": "L84"
+    },
+    {
+      "id": "back_test_add_emas",
+      "label": "add_emas()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "source_location": "L124"
+    },
+    {
+      "id": "back_test_detect_swing_highs",
+      "label": "detect_swing_highs()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "source_location": "L132"
+    },
+    {
+      "id": "back_test_detect_swing_lows",
+      "label": "detect_swing_lows()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "source_location": "L142"
+    },
+    {
+      "id": "back_test_detect_liquidity_grabs",
+      "label": "detect_liquidity_grabs()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "source_location": "L152"
+    },
+    {
+      "id": "back_test_detect_fvg",
+      "label": "detect_fvg()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "source_location": "L215"
+    },
+    {
+      "id": "back_test_detect_bos",
+      "label": "detect_bos()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "source_location": "L228"
+    },
+    {
+      "id": "back_test_run_backtest",
+      "label": "run_backtest()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "source_location": "L248"
+    },
+    {
+      "id": "back_test_print_stats",
+      "label": "print_stats()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "source_location": "L396"
+    },
+    {
+      "id": "back_test_scalar",
+      "label": "_scalar()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "source_location": "L438"
+    },
+    {
+      "id": "back_test_plot_results",
+      "label": "plot_results()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "source_location": "L447"
+    },
+    {
+      "id": "back_test_export_trades",
+      "label": "export_trades()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "source_location": "L507"
+    },
+    {
+      "id": "back_test_main",
+      "label": "main()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "source_location": "L516"
+    },
+    {
+      "id": "back_test_rationale_1",
+      "label": "============================================================= STRATEGY: 4H Liqu",
+      "file_type": "rationale",
+      "source_file": "back_test.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "back_test_rationale_85",
+      "label": "Try multiple symbol aliases until one works.",
+      "file_type": "rationale",
+      "source_file": "back_test.py",
+      "source_location": "L85"
+    },
+    {
+      "id": "back_test_rationale_125",
+      "label": "50 EMA trend filter, 200 EMA macro bias, slope for trend strength.",
+      "file_type": "rationale",
+      "source_file": "back_test.py",
+      "source_location": "L125"
+    },
+    {
+      "id": "back_test_rationale_153",
+      "label": "Bearish grab: sweep above swing high, candle closes below → short bias     Bull",
+      "file_type": "rationale",
+      "source_file": "back_test.py",
+      "source_location": "L153"
+    },
+    {
+      "id": "back_test_rationale_216",
+      "label": "Fair Value Gap: 3-candle pattern.",
+      "file_type": "rationale",
+      "source_file": "back_test.py",
+      "source_location": "L216"
+    },
+    {
+      "id": "back_test_rationale_229",
+      "label": "Break of Structure on 15M.",
+      "file_type": "rationale",
+      "source_file": "back_test.py",
+      "source_location": "L229"
+    },
+    {
+      "id": "back_test_rationale_439",
+      "label": "Safely extract scalar from pandas Series or scalar.",
+      "file_type": "rationale",
+      "source_file": "back_test.py",
+      "source_location": "L439"
+    },
+    {
+      "id": "live_trade",
+      "label": "live_trade.py",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "live_trade_make_exchange",
+      "label": "make_exchange()",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "source_location": "L81"
+    },
+    {
+      "id": "live_trade_init_csv",
+      "label": "init_csv()",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "source_location": "L96"
+    },
+    {
+      "id": "live_trade_append_csv",
+      "label": "append_csv()",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "source_location": "L101"
+    },
+    {
+      "id": "live_trade_fetch_candles",
+      "label": "fetch_candles()",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "source_location": "L107"
+    },
+    {
+      "id": "live_trade_get_balance",
+      "label": "get_balance()",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "source_location": "L120"
+    },
+    {
+      "id": "live_trade_has_open_position",
+      "label": "has_open_position()",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "source_location": "L128"
+    },
+    {
+      "id": "live_trade_calc_lots",
+      "label": "calc_lots()",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "source_location": "L136"
+    },
+    {
+      "id": "live_trade_place_bracket",
+      "label": "place_bracket()",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "source_location": "L146"
+    },
+    {
+      "id": "live_trade_seconds_to_next_15m",
+      "label": "seconds_to_next_15m()",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "source_location": "L160"
+    },
+    {
+      "id": "live_trade_find_fresh_signal",
+      "label": "find_fresh_signal()",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "source_location": "L170"
+    },
+    {
+      "id": "live_trade_postracker",
+      "label": "PosTracker",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "source_location": "L275"
+    },
+    {
+      "id": "live_trade_postracker_init",
+      "label": ".__init__()",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "source_location": "L277"
+    },
+    {
+      "id": "live_trade_postracker_add",
+      "label": ".add()",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "source_location": "L280"
+    },
+    {
+      "id": "live_trade_postracker_check_and_log",
+      "label": ".check_and_log()",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "source_location": "L283"
+    },
+    {
+      "id": "live_trade_main",
+      "label": "main()",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "source_location": "L331"
+    },
+    {
+      "id": "live_trade_rationale_1",
+      "label": "live_trade.py ============= Live paper-trading runner for Delta India Demo. Stra",
+      "file_type": "rationale",
+      "source_file": "live_trade.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "live_trade_rationale_171",
+      "label": "Returns (direction, entry, sl, tp) if fresh signal found, else None.     Marks g",
+      "file_type": "rationale",
+      "source_file": "live_trade.py",
+      "source_location": "L171"
+    },
+    {
+      "id": "live_trade_rationale_276",
+      "label": "Track open trade metadata per symbol.",
+      "file_type": "rationale",
+      "source_file": "live_trade.py",
+      "source_location": "L276"
+    },
+    {
+      "id": "monitor_trade",
+      "label": "monitor_trade.py",
+      "file_type": "code",
+      "source_file": "monitor_trade.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "monitor_trade_make_exchange",
+      "label": "make_exchange()",
+      "file_type": "code",
+      "source_file": "monitor_trade.py",
+      "source_location": "L44"
+    },
+    {
+      "id": "monitor_trade_init_csv",
+      "label": "init_csv()",
+      "file_type": "code",
+      "source_file": "monitor_trade.py",
+      "source_location": "L66"
+    },
+    {
+      "id": "monitor_trade_append_csv",
+      "label": "append_csv()",
+      "file_type": "code",
+      "source_file": "monitor_trade.py",
+      "source_location": "L73"
+    },
+    {
+      "id": "monitor_trade_snapshot_positions",
+      "label": "snapshot_positions()",
+      "file_type": "code",
+      "source_file": "monitor_trade.py",
+      "source_location": "L80"
+    },
+    {
+      "id": "monitor_trade_snapshot_orders",
+      "label": "snapshot_orders()",
+      "file_type": "code",
+      "source_file": "monitor_trade.py",
+      "source_location": "L93"
+    },
+    {
+      "id": "monitor_trade_main",
+      "label": "main()",
+      "file_type": "code",
+      "source_file": "monitor_trade.py",
+      "source_location": "L102"
+    },
+    {
+      "id": "monitor_trade_rationale_1",
+      "label": "monitor_trade.py ================ Polls ALL open positions on Delta India Demo.",
+      "file_type": "rationale",
+      "source_file": "monitor_trade.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "monitor_trade_rationale_81",
+      "label": "Return {symbol: position_dict} for all open positions.",
+      "file_type": "rationale",
+      "source_file": "monitor_trade.py",
+      "source_location": "L81"
+    },
+    {
+      "id": "monitor_trade_rationale_94",
+      "label": "Return open bracket orders for a symbol (reduceOnly).",
+      "file_type": "rationale",
+      "source_file": "monitor_trade.py",
+      "source_location": "L94"
+    }
+  ],
+  "edges": [
+    {
+      "source": "back_test",
+      "target": "ccxt",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L20",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "pandas",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "numpy",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L22",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "matplotlib_pyplot",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L23",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "matplotlib_dates",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L24",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "datetime",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L25",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "warnings",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L26",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "back_test_get_exchange",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L77",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "back_test_fetch_ohlcv",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L84",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "back_test_add_emas",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L124",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "back_test_detect_swing_highs",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L132",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "back_test_detect_swing_lows",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L142",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "back_test_detect_liquidity_grabs",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L152",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "back_test_detect_fvg",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L215",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "back_test_detect_bos",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L228",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "back_test_run_backtest",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L248",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "back_test_print_stats",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L396",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "back_test_scalar",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L438",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "back_test_plot_results",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L447",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "back_test_export_trades",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L507",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test",
+      "target": "back_test_main",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L516",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_detect_liquidity_grabs",
+      "target": "back_test_detect_swing_highs",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L158",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_detect_liquidity_grabs",
+      "target": "back_test_detect_swing_lows",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L159",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_run_backtest",
+      "target": "back_test_add_emas",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L255",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_run_backtest",
+      "target": "back_test_detect_liquidity_grabs",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L256",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_run_backtest",
+      "target": "back_test_detect_bos",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L307",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_run_backtest",
+      "target": "back_test_detect_fvg",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L316",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_plot_results",
+      "target": "back_test_scalar",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L475",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_main",
+      "target": "back_test_get_exchange",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L522",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_main",
+      "target": "back_test_fetch_ohlcv",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L529",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_main",
+      "target": "back_test_run_backtest",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L540",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_main",
+      "target": "back_test_print_stats",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L545",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_main",
+      "target": "back_test_plot_results",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L551",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_main",
+      "target": "back_test_export_trades",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L552",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_rationale_1",
+      "target": "back_test",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_rationale_85",
+      "target": "back_test_fetch_ohlcv",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L85",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_rationale_125",
+      "target": "back_test_add_emas",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L125",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_rationale_153",
+      "target": "back_test_detect_liquidity_grabs",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L153",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_rationale_216",
+      "target": "back_test_detect_fvg",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L216",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_rationale_229",
+      "target": "back_test_detect_bos",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L229",
+      "weight": 1.0
+    },
+    {
+      "source": "back_test_rationale_439",
+      "target": "back_test_scalar",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "back_test.py",
+      "source_location": "L439",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "ccxt",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "csv",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L22",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "os",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L23",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "sys",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L24",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "time",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L25",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "logging",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L26",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "datetime",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L27",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "pandas",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L29",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "back_test",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L33",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "live_trade_make_exchange",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L81",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "live_trade_init_csv",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L96",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "live_trade_append_csv",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L101",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "live_trade_fetch_candles",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L107",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "live_trade_get_balance",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L120",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "live_trade_has_open_position",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L128",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "live_trade_calc_lots",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L136",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "live_trade_place_bracket",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L146",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "live_trade_seconds_to_next_15m",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L160",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "live_trade_find_fresh_signal",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L170",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "live_trade_postracker",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L275",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_postracker",
+      "target": "live_trade_postracker_init",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L277",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_postracker",
+      "target": "live_trade_postracker_add",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L280",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_postracker",
+      "target": "live_trade_postracker_check_and_log",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L283",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "live_trade_main",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L331",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_find_fresh_signal",
+      "target": "live_trade_postracker_add",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L193",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_postracker_check_and_log",
+      "target": "live_trade_has_open_position",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L288",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_postracker_check_and_log",
+      "target": "live_trade_append_csv",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L325",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_main",
+      "target": "live_trade_make_exchange",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L337",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_main",
+      "target": "live_trade_init_csv",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L339",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_main",
+      "target": "live_trade_postracker",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L344",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_main",
+      "target": "live_trade_fetch_candles",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L349",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_main",
+      "target": "live_trade_postracker_add",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L356",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_main",
+      "target": "live_trade_seconds_to_next_15m",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L363",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_main",
+      "target": "live_trade_get_balance",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L369",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_main",
+      "target": "live_trade_postracker_check_and_log",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L375",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_main",
+      "target": "live_trade_has_open_position",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L393",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_main",
+      "target": "live_trade_find_fresh_signal",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L404",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_main",
+      "target": "live_trade_calc_lots",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L411",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_main",
+      "target": "live_trade_place_bracket",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L418",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_rationale_1",
+      "target": "live_trade",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_rationale_171",
+      "target": "live_trade_find_fresh_signal",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L171",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_rationale_276",
+      "target": "live_trade_postracker",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L276",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade",
+      "target": "ccxt",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L14",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade",
+      "target": "csv",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L15",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade",
+      "target": "os",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L16",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade",
+      "target": "time",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L17",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade",
+      "target": "datetime",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L18",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade",
+      "target": "monitor_trade_make_exchange",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L44",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade",
+      "target": "monitor_trade_init_csv",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L66",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade",
+      "target": "monitor_trade_append_csv",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L73",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade",
+      "target": "monitor_trade_snapshot_positions",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L80",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade",
+      "target": "monitor_trade_snapshot_orders",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L93",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade",
+      "target": "monitor_trade_main",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L102",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade_main",
+      "target": "monitor_trade_make_exchange",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L108",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade_main",
+      "target": "monitor_trade_init_csv",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L110",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade_main",
+      "target": "monitor_trade_snapshot_positions",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L113",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade_main",
+      "target": "monitor_trade_snapshot_orders",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L121",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade_main",
+      "target": "monitor_trade_append_csv",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L203",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade_rationale_1",
+      "target": "monitor_trade",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade_rationale_81",
+      "target": "monitor_trade_snapshot_positions",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L81",
+      "weight": 1.0
+    },
+    {
+      "source": "monitor_trade_rationale_94",
+      "target": "monitor_trade_snapshot_orders",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "monitor_trade.py",
+      "source_location": "L94",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "back_test_add_emas",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L33",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "back_test_detect_liquidity_grabs",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L33",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "back_test_detect_bos",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L33",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade",
+      "target": "back_test_detect_fvg",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L33",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_find_fresh_signal",
+      "target": "back_test_add_emas",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L177",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_find_fresh_signal",
+      "target": "back_test_detect_liquidity_grabs",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L178",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_find_fresh_signal",
+      "target": "back_test_detect_bos",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L226",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_find_fresh_signal",
+      "target": "back_test_detect_fvg",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L233",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_main",
+      "target": "back_test_add_emas",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L352",
+      "weight": 1.0
+    },
+    {
+      "source": "live_trade_main",
+      "target": "back_test_detect_liquidity_grabs",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "live_trade.py",
+      "source_location": "L354",
+      "weight": 1.0
+    }
+  ],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

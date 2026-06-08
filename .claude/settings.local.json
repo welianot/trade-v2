@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(venv/Scripts/python.exe -c \":*)",
+      "Bash(venv/Scripts/python.exe -c \"import dotenv; print\\(''''have dotenv''''\\)\")",
+      "Bash(timeout 60 venv/Scripts/python.exe -c \":*)"
+    ]
+  }
+}

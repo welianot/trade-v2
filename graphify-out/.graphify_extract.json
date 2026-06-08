@@ -1,0 +1,119 @@
+{
+  "nodes": [
+    {
+      "id": "back_test_detect_grabs",
+      "label": "detect_liquidity_grabs()",
+      "file_type": "code",
+      "source_file": "back_test.py"
+    },
+    {
+      "id": "back_test_detect_bos",
+      "label": "detect_bos()",
+      "file_type": "code",
+      "source_file": "back_test.py"
+    },
+    {
+      "id": "back_test_detect_fvg",
+      "label": "detect_fvg()",
+      "file_type": "code",
+      "source_file": "back_test.py"
+    },
+    {
+      "id": "back_test_run_backtest",
+      "label": "run_backtest()",
+      "file_type": "code",
+      "source_file": "back_test.py"
+    },
+    {
+      "id": "live_trade_find_signal",
+      "label": "find_fresh_signal()",
+      "file_type": "code",
+      "source_file": "live_trade.py"
+    },
+    {
+      "id": "live_trade_place_bracket",
+      "label": "place_bracket()",
+      "file_type": "code",
+      "source_file": "live_trade.py"
+    },
+    {
+      "id": "monitor_trade_snapshot",
+      "label": "snapshot_positions()",
+      "file_type": "code",
+      "source_file": "monitor_trade.py"
+    },
+    {
+      "id": "strategy_smc",
+      "label": "SMC Strategy",
+      "file_type": "rationale",
+      "source_file": "back_test.py"
+    },
+    {
+      "id": "risk_mgmt",
+      "label": "Risk Management",
+      "file_type": "rationale",
+      "source_file": "back_test.py"
+    }
+  ],
+  "edges": [
+    {
+      "source": "back_test_detect_grabs",
+      "target": "strategy_smc",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "back_test_detect_bos",
+      "target": "strategy_smc",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "back_test_detect_fvg",
+      "target": "strategy_smc",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "live_trade_find_signal",
+      "target": "back_test_detect_grabs",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "live_trade_place_bracket",
+      "target": "risk_mgmt",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "monitor_trade_snapshot",
+      "target": "live_trade_place_bracket",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85
+    },
+    {
+      "source": "back_test_run_backtest",
+      "target": "back_test_detect_grabs",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "back_test_run_backtest",
+      "target": "risk_mgmt",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 0,
+  "output_tokens": 1256
+}

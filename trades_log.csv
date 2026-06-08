@@ -1,0 +1,4 @@
+date,symbol,side,lots,contract_size,entry_price,exit_price,sl_price,tp_price,pnl_usd,result,hold_time_min,opened_at,closed_at
+2026-06-02,BTC/USD:USD,buy,1,0.001,70907.7,70223.7,70223.7,73061.0,-0.684,loss,141.4,2026-06-02 03:52:47 UTC,2026-06-02 06:14:08 UTC
+2026-06-03,ETH/USD:USD,buy,1,0.01,1855.6,1846.6,1846.57,1874.41,-0.09,loss,40.0,2026-06-03 14:50:09 UTC,2026-06-03 15:30:06 UTC
+2026-06-04,BTC/USD:USD,buy,30,0.001,64209.6,63262.0,63262.0,67500.0,-28.428,loss,139.9,2026-06-04 06:10:14 UTC,2026-06-04 08:30:06 UTC

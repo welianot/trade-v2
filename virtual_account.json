@@ -1,0 +1,31 @@
+{
+  "balance": 92500.0,
+  "equity": 100000.0,
+  "realized_pnl": 1500.0,
+  "open_positions": [
+    {
+      "id": 1,
+      "symbol": "NIFTY25000CE",
+      "side": "BUY",
+      "qty": 75,
+      "entry": 120.0,
+      "ltp": 120.0,
+      "pnl": 0,
+      "opened_at": "2026-06-05 14:25:35.362853"
+    }
+  ],
+  "closed_positions": [
+    {
+      "id": 1,
+      "symbol": "NIFTY26000CE",
+      "side": "BUY",
+      "qty": 75,
+      "entry": 120,
+      "ltp": 140,
+      "pnl": 1500,
+      "opened_at": "2026-06-05 14:06:37.541959",
+      "exit": 140,
+      "closed_at": "2026-06-05 14:06:37.543964"
+    }
+  ]
+}

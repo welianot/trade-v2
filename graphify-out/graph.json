@@ -1,0 +1,138 @@
+{
+  "directed": false,
+  "multigraph": false,
+  "graph": {},
+  "nodes": [
+    {
+      "label": "detect_liquidity_grabs()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "id": "back_test_detect_grabs",
+      "community": 2,
+      "norm_label": "detect_liquidity_grabs()"
+    },
+    {
+      "label": "detect_bos()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "id": "back_test_detect_bos",
+      "community": 1,
+      "norm_label": "detect_bos()"
+    },
+    {
+      "label": "detect_fvg()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "id": "back_test_detect_fvg",
+      "community": 1,
+      "norm_label": "detect_fvg()"
+    },
+    {
+      "label": "run_backtest()",
+      "file_type": "code",
+      "source_file": "back_test.py",
+      "id": "back_test_run_backtest",
+      "community": 0,
+      "norm_label": "run_backtest()"
+    },
+    {
+      "label": "find_fresh_signal()",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "id": "live_trade_find_signal",
+      "community": 2,
+      "norm_label": "find_fresh_signal()"
+    },
+    {
+      "label": "place_bracket()",
+      "file_type": "code",
+      "source_file": "live_trade.py",
+      "id": "live_trade_place_bracket",
+      "community": 0,
+      "norm_label": "place_bracket()"
+    },
+    {
+      "label": "snapshot_positions()",
+      "file_type": "code",
+      "source_file": "monitor_trade.py",
+      "id": "monitor_trade_snapshot",
+      "community": 0,
+      "norm_label": "snapshot_positions()"
+    },
+    {
+      "label": "SMC Strategy",
+      "file_type": "rationale",
+      "source_file": "back_test.py",
+      "id": "strategy_smc",
+      "community": 1,
+      "norm_label": "smc strategy"
+    },
+    {
+      "label": "Risk Management",
+      "file_type": "rationale",
+      "source_file": "back_test.py",
+      "id": "risk_mgmt",
+      "community": 0,
+      "norm_label": "risk management"
+    }
+  ],
+  "links": [
+    {
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source": "back_test_detect_grabs",
+      "target": "strategy_smc"
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source": "back_test_run_backtest",
+      "target": "back_test_detect_grabs"
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source": "live_trade_find_signal",
+      "target": "back_test_detect_grabs"
+    },
+    {
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source": "back_test_detect_bos",
+      "target": "strategy_smc"
+    },
+    {
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source": "back_test_detect_fvg",
+      "target": "strategy_smc"
+    },
+    {
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source": "back_test_run_backtest",
+      "target": "risk_mgmt"
+    },
+    {
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source": "live_trade_place_bracket",
+      "target": "risk_mgmt"
+    },
+    {
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source": "monitor_trade_snapshot",
+      "target": "live_trade_place_bracket"
+    }
+  ],
+  "hyperedges": []
+}
