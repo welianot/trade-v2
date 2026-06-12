@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 
 # Current NSE/BSE contract lot sizes. Single source of truth — other modules
 # (e.g. options_strategies.py) import LOT_SIZE from here, do NOT redefine.
-LOT_SIZE    = {"NIFTY": 75, "BANKNIFTY": 35, "SENSEX": 20}
+LOT_SIZE    = {"NIFTY": 65, "BANKNIFTY": 30, "SENSEX": 20}
 STRIKE_STEP = {"NIFTY": 50, "BANKNIFTY": 100, "SENSEX": 100}
 
 # Margin blocked per lot for naked sells (simplified SPAN approximation)
