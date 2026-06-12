@@ -27,7 +27,10 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-LOT_SIZE    = {"NIFTY": 50, "BANKNIFTY": 30, "SENSEX": 20}
+# Single source of truth: import lot sizes from the engine so the two modules
+# can never drift out of sync.
+from options_paper_engine import LOT_SIZE
+
 STRIKE_STEP = {"NIFTY": 50, "BANKNIFTY": 100, "SENSEX": 100}
 
 # Per-underlying iron_condor offsets

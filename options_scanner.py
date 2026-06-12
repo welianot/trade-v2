@@ -39,9 +39,9 @@ SYMBOLS = {
     "SENSEX":    "BSE:SENSEX-INDEX",
 }
 
-STRIKE_STEP   = {"NIFTY": 50,    "BANKNIFTY": 100,   "SENSEX": 100}
-LOT_SIZE      = {"NIFTY": 50,    "BANKNIFTY": 30,    "SENSEX": 20}
-MARGIN_PER_LOT= {"NIFTY": 80000, "BANKNIFTY": 50000, "SENSEX": 60000}
+# Single source of truth: import shared contract constants from the engine
+# so lot sizes / steps / margins can never drift between modules.
+from options_paper_engine import STRIKE_STEP, LOT_SIZE, MARGIN_PER_LOT
 
 # Bias thresholds
 PCR_BULL      = 1.3    # PCR above → bullish sentiment

@@ -29,7 +29,9 @@ log = logging.getLogger(__name__)
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
 
-LOT_SIZE    = {"NIFTY": 50, "BANKNIFTY": 30, "SENSEX": 20}
+# Current NSE/BSE contract lot sizes. Single source of truth — other modules
+# (e.g. options_strategies.py) import LOT_SIZE from here, do NOT redefine.
+LOT_SIZE    = {"NIFTY": 65, "BANKNIFTY": 30, "SENSEX": 20}
 STRIKE_STEP = {"NIFTY": 50, "BANKNIFTY": 100, "SENSEX": 100}
 
 # Margin blocked per lot for naked sells (simplified SPAN approximation)
@@ -45,6 +47,7 @@ MIN_IV_FOR_SELL    = 10.0       # don't sell if IV below this (%)
 DEFAULT_STATE = {
     "capital":          DEFAULT_CAPITAL,
     "used_margin":      0.0,
+    "premium_received": 0.0,   # credit from open short options, held separately
     "realized_pnl":     0.0,
     "open_positions":   {},
     "closed_positions": [],
@@ -66,6 +69,17 @@ def _lot_size(underlying: str) -> int:
 
 def _margin_per_lot(underlying: str) -> float:
     return MARGIN_PER_LOT.get(underlying, 80000)
+
+
+def _spread_max_loss(underlying: str, short_strike: int, long_strike: int,
+                     lots: int, net_credit_per_share: float) -> float:
+    """
+    Max loss (margin to block) for a vertical spread = (width - net credit) * qty,
+    floored at 0. Used when a short leg is hedged by a long leg.
+    """
+    width = abs(short_strike - long_strike)
+    qty   = lots * LOT_SIZE.get(underlying, 75)
+    return max(0.0, (width - net_credit_per_share) * qty)
 
 
 # ─── ENGINE ──────────────────────────────────────────────────────────────────
@@ -111,6 +125,8 @@ class OptionsPaperEngine:
     # ── Account info ─────────────────────────────────────────────────────────
 
     def get_available_capital(self) -> float:
+        # Short-sale premium is NOT spendable free capital; it is held in
+        # premium_received until the position is closed/settled.
         return self.state["capital"] - self.state["used_margin"]
 
     def get_summary(self) -> dict:
@@ -142,8 +158,13 @@ class OptionsPaperEngine:
         )
 
     def _check_daily_loss_halt(self) -> Optional[str]:
-        """Check if daily loss limit breached. Returns halt reason or None."""
-        daily_pnl = self.get_daily_pnl()
+        """Check if daily loss limit breached. Returns halt reason or None.
+        Includes open (unrealized) PnL so a large open drawdown also halts."""
+        open_pnl  = sum(
+            p.get("unrealized_pnl", 0)
+            for p in self.state["open_positions"].values()
+        )
+        daily_pnl = self.get_daily_pnl() + open_pnl
         limit     = -1 * MAX_DAILY_LOSS_PCT * self.state["capital"]
         if daily_pnl <= limit:
             return f"Daily loss limit hit: ₹{daily_pnl:,.0f} (limit ₹{limit:,.0f})"
@@ -168,6 +189,24 @@ class OptionsPaperEngine:
         log.info("[OPE] Trading RESUMED.")
 
     # ── Margin warning ────────────────────────────────────────────────────────
+
+    def _find_hedge_leg(self, strategy_tag: str, underlying: str,
+                        opt_type: str, short_strike: int) -> Optional[dict]:
+        """
+        Find an open long (BUY) leg in the same strategy and option type that
+        hedges the given short leg. Returns the closest protective long, or None.
+        """
+        candidates = [
+            p for p in self.state["open_positions"].values()
+            if p.get("strategy_tag") == strategy_tag
+            and p["underlying"] == underlying
+            and p["opt_type"] == opt_type
+            and p["action"] == "BUY"
+        ]
+        if not candidates:
+            return None
+        # Closest strike to the short leg gives the tightest (correct) max-loss.
+        return min(candidates, key=lambda p: abs(p["strike"] - short_strike))
 
     def _margin_warning(self) -> Optional[str]:
         capital = self.state["capital"]
@@ -305,8 +344,18 @@ class OptionsPaperEngine:
 
             # ── SELL ─────────────────────────────────────────────────────────
             else:
+                credit = premium * qty
+
+                # Spread-aware margin: if a long leg in the same strategy hedges
+                # this short leg, block only the spread max-loss, not full SPAN.
                 margin_needed = _margin_per_lot(underlying) * lots
-                credit        = premium * qty
+                if strategy_tag:
+                    hedge = self._find_hedge_leg(strategy_tag, underlying, opt_type, strike)
+                    if hedge is not None:
+                        margin_needed = _spread_max_loss(
+                            underlying, strike, hedge["strike"], lots,
+                            net_credit_per_share=premium,
+                        )
 
                 if margin_needed > self.get_available_capital():
                     return False, (
@@ -317,8 +366,11 @@ class OptionsPaperEngine:
                 if key in self.state["open_positions"]:
                     return False, "SELL position already open for this contract. Close first."
 
-                self.state["used_margin"] += margin_needed
-                self.state["capital"]     += credit
+                self.state["used_margin"]      += margin_needed
+                # Credit is held separately, NOT added to spendable capital.
+                self.state["premium_received"] = round(
+                    self.state.get("premium_received", 0.0) + credit, 2
+                )
 
                 self.state["open_positions"][key] = {
                     "key":             key,
@@ -457,9 +509,14 @@ class OptionsPaperEngine:
                 pnl = (exit_premium - entry) * qty
                 self.state["capital"] += exit_premium * qty
             else:
-                buyback_cost = exit_premium * qty
-                self.state["capital"] -= buyback_cost
+                # Release the credit we held when opening, settle realized P&L
+                # against capital, and free the blocked margin.
+                entry_credit = entry * qty
                 pnl = (entry - exit_premium) * qty
+                self.state["capital"] += pnl
+                self.state["premium_received"] = round(
+                    max(0.0, self.state.get("premium_received", 0.0) - entry_credit), 2
+                )
                 self.state["used_margin"] = max(
                     0, self.state["used_margin"] - pos["margin_blocked"]
                 )
