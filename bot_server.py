@@ -2000,8 +2000,9 @@ def _format_signal_confirm(sig: dict) -> str:
     return "\n".join(lines)
 
 
-# Lot sizes needed inside the formatter without circular import
-LOT_SIZE_MAP = {"NIFTY": 50, "BANKNIFTY": 30, "SENSEX": 20}
+# Lot sizes for the confirm-message cost display. Single-sourced from the
+# engine so this can't drift from the actual trade sizing.
+from options_paper_engine import LOT_SIZE as LOT_SIZE_MAP
 
 
 def _place_auto_trade(sig: dict):
@@ -2179,6 +2180,13 @@ def _auto_trader_loop():
                     continue
 
                 strategy = sig.get("strategy", "")
+
+                # Directional only: auto-trade BUY CE / BUY PE signals.
+                # Sideways SELL straddle/strangle stay scan-only (use /options).
+                if strategy not in ("buy_ce", "buy_pe"):
+                    log.info(f"[AUTO] {index}: {strategy} is non-directional — skipping (scan-only).")
+                    continue
+
                 trade_key = (index, strategy)
 
                 with _auto_lock:
