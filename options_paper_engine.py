@@ -47,6 +47,7 @@ MIN_IV_FOR_SELL    = 10.0       # don't sell if IV below this (%)
 DEFAULT_STATE = {
     "capital":          DEFAULT_CAPITAL,
     "used_margin":      0.0,
+    "premium_received": 0.0,   # credit from open short options, held separately
     "realized_pnl":     0.0,
     "open_positions":   {},
     "closed_positions": [],
@@ -113,6 +114,8 @@ class OptionsPaperEngine:
     # ── Account info ─────────────────────────────────────────────────────────
 
     def get_available_capital(self) -> float:
+        # Short-sale premium is NOT spendable free capital; it is held in
+        # premium_received until the position is closed/settled.
         return self.state["capital"] - self.state["used_margin"]
 
     def get_summary(self) -> dict:
