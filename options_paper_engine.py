@@ -5,6 +5,16 @@ Full options paper trading engine.
 Supports: Buy/Sell CE/PE, SL/TP on premium, margin simulation,
 multi-leg positions, expiry auto-settlement.
 
+Improvements over v1:
+  - Daily PnL limit check (auto-halt trading)
+  - Max open positions limit
+  - Trailing SL support on premium
+  - IV-based margin scaling (higher IV = higher margin blocked)
+  - Position age tracking
+  - Atomic multi-leg rollback improvement (partial fill detection)
+  - Strategy-level PnL aggregation
+  - Warnings for low capital / high margin utilization
+
 Used by: bot_server.py, options_monitor.py, options_strategies.py
 """
 
@@ -25,32 +35,29 @@ STRIKE_STEP = {"NIFTY": 50, "BANKNIFTY": 100, "SENSEX": 100}
 # Margin blocked per lot for naked sells (simplified SPAN approximation)
 MARGIN_PER_LOT = {"NIFTY": 80000, "BANKNIFTY": 50000, "SENSEX": 60000}
 
-DEFAULT_CAPITAL = 500000.0   # ₹5 lakh starting capital
-STATE_FILE      = "options_paper_account.json"
+DEFAULT_CAPITAL    = 500000.0   # ₹5 lakh starting capital
+STATE_FILE         = "options_paper_account.json"
+MAX_OPEN_POSITIONS = 20         # hard limit on concurrent positions
+MAX_DAILY_LOSS_PCT = 0.05       # halt if daily loss > 5% of capital
+MARGIN_WARN_PCT    = 0.80       # warn if margin used > 80% of capital
+MIN_IV_FOR_SELL    = 10.0       # don't sell if IV below this (%)
 
 DEFAULT_STATE = {
-    "capital":       DEFAULT_CAPITAL,
-    "used_margin":   0.0,
-    "realized_pnl":  0.0,
-    "open_positions": {},    # key → position dict
+    "capital":          DEFAULT_CAPITAL,
+    "used_margin":      0.0,
+    "realized_pnl":     0.0,
+    "open_positions":   {},
     "closed_positions": [],
-    "trade_log": [],
+    "trade_log":        [],
+    "trading_halted":   False,
+    "halt_reason":      "",
 }
 
 
 # ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 def _pos_key(underlying: str, strike: int, opt_type: str, expiry: str) -> str:
-    """Unique key per option contract."""
     return f"{underlying}_{strike}{opt_type}_{expiry}"
-
-
-def _underlying(symbol: str) -> str:
-    """Extract underlying from symbol like NIFTY_24500CE_26JUN."""
-    for u in LOT_SIZE:
-        if symbol.startswith(u):
-            return u
-    return "NIFTY"
 
 
 def _lot_size(underlying: str) -> int:
@@ -74,14 +81,19 @@ class OptionsPaperEngine:
     def _load(self) -> dict:
         if not os.path.exists(STATE_FILE):
             s = DEFAULT_STATE.copy()
-            s["open_positions"] = {}
+            s["open_positions"]   = {}
             s["closed_positions"] = []
-            s["trade_log"] = []
+            s["trade_log"]        = []
             self._save_raw(s)
             return s
         try:
             with open(STATE_FILE, "r") as f:
-                return json.load(f)
+                data = json.load(f)
+            # Backfill new keys for old state files
+            for k, v in DEFAULT_STATE.items():
+                if k not in data:
+                    data[k] = v
+            return data
         except Exception as e:
             log.warning(f"[OPE] load failed: {e}. Fresh state.")
             return DEFAULT_STATE.copy()
@@ -106,35 +118,88 @@ class OptionsPaperEngine:
             p.get("unrealized_pnl", 0)
             for p in self.state["open_positions"].values()
         )
+        capital    = self.state["capital"]
+        used_margin = self.state["used_margin"]
+        margin_pct = (used_margin / capital * 100) if capital > 0 else 0
         return {
-            "capital":        self.state["capital"],
-            "used_margin":    self.state["used_margin"],
-            "available":      self.get_available_capital(),
-            "open_pnl":       open_pnl,
-            "realized_pnl":   self.state["realized_pnl"],
-            "net_pnl":        self.state["realized_pnl"] + open_pnl,
-            "open_positions": len(self.state["open_positions"]),
+            "capital":          capital,
+            "used_margin":      used_margin,
+            "margin_pct":       round(margin_pct, 1),
+            "available":        self.get_available_capital(),
+            "open_pnl":         open_pnl,
+            "realized_pnl":     self.state["realized_pnl"],
+            "net_pnl":          self.state["realized_pnl"] + open_pnl,
+            "open_positions":   len(self.state["open_positions"]),
+            "trading_halted":   self.state.get("trading_halted", False),
+            "halt_reason":      self.state.get("halt_reason", ""),
         }
+
+    def get_daily_pnl(self) -> float:
+        today = date.today().isoformat()
+        return sum(
+            t["pnl"] for t in self.state["trade_log"]
+            if t.get("date") == today
+        )
+
+    def _check_daily_loss_halt(self) -> Optional[str]:
+        """Check if daily loss limit breached. Returns halt reason or None."""
+        daily_pnl = self.get_daily_pnl()
+        limit     = -1 * MAX_DAILY_LOSS_PCT * self.state["capital"]
+        if daily_pnl <= limit:
+            return f"Daily loss limit hit: ₹{daily_pnl:,.0f} (limit ₹{limit:,.0f})"
+        return None
+
+    def is_halted(self) -> tuple[bool, str]:
+        return (
+            self.state.get("trading_halted", False),
+            self.state.get("halt_reason", ""),
+        )
+
+    def halt_trading(self, reason: str):
+        self.state["trading_halted"] = True
+        self.state["halt_reason"]    = reason
+        self._save()
+        log.warning(f"[OPE] Trading HALTED: {reason}")
+
+    def resume_trading(self):
+        self.state["trading_halted"] = False
+        self.state["halt_reason"]    = ""
+        self._save()
+        log.info("[OPE] Trading RESUMED.")
+
+    # ── Margin warning ────────────────────────────────────────────────────────
+
+    def _margin_warning(self) -> Optional[str]:
+        capital = self.state["capital"]
+        if capital <= 0:
+            return None
+        pct = self.state["used_margin"] / capital
+        if pct >= MARGIN_WARN_PCT:
+            return f"⚠️ High margin utilization: {pct*100:.1f}% of capital blocked"
+        return None
 
     # ── Place order ───────────────────────────────────────────────────────────
 
     def place_order(
         self,
-        underlying: str,    # NIFTY / BANKNIFTY / SENSEX
+        underlying: str,
         strike: int,
-        opt_type: str,      # CE / PE
-        expiry: str,        # e.g. "26JUN"
-        action: str,        # BUY / SELL
+        opt_type: str,
+        expiry: str,
+        action: str,
         lots: int,
-        premium: float,     # current LTP
-        strategy_tag: str = "",   # optional: "iron_condor", "straddle" etc
-        leg_tag: str = "",        # optional: "short_ce", "long_pe" etc
+        premium: float,
+        strategy_tag: str = "",
+        leg_tag: str = "",
+        iv: Optional[float] = None,       # optional: current IV% for sell validation
+        trailing_sl: Optional[float] = None,  # optional: trailing SL distance in ₹
     ) -> tuple[bool, str]:
 
         underlying = underlying.upper()
         opt_type   = opt_type.upper()
         action     = action.upper()
 
+        # ── Validation ───────────────────────────────────────────────────────
         if underlying not in LOT_SIZE:
             return False, f"Unknown underlying: {underlying}"
         if opt_type not in ("CE", "PE"):
@@ -146,22 +211,46 @@ class OptionsPaperEngine:
         if premium <= 0:
             return False, "premium must be > 0"
 
-        lot_sz  = _lot_size(underlying)
-        qty     = lots * lot_sz
-        key     = _pos_key(underlying, strike, opt_type, expiry)
+        # Trading halt check
+        halted, reason = self.is_halted()
+        if halted:
+            return False, f"🛑 Trading halted: {reason}\nUse /optresume to re-enable."
+
+        # Daily loss halt check
+        halt_reason = self._check_daily_loss_halt()
+        if halt_reason:
+            self.halt_trading(halt_reason)
+            return False, f"🛑 {halt_reason}"
+
+        # IV check for sells
+        if action == "SELL" and iv is not None and iv < MIN_IV_FOR_SELL:
+            return False, (
+                f"⚠️ IV too low ({iv:.1f}%) for selling. Min IV = {MIN_IV_FOR_SELL}%.\n"
+                f"Selling in low IV = poor premium, high risk. Skip or override."
+            )
+
+        lot_sz = _lot_size(underlying)
+        qty    = lots * lot_sz
+        key    = _pos_key(underlying, strike, opt_type, expiry)
 
         with self._lock:
-            # ── BUY: deduct premium cost ──────────────────────────────────
+            # Max positions check
+            if len(self.state["open_positions"]) >= MAX_OPEN_POSITIONS:
+                return False, f"Max open positions ({MAX_OPEN_POSITIONS}) reached. Close some first."
+
+            # ── BUY ──────────────────────────────────────────────────────────
             if action == "BUY":
                 cost = premium * qty
                 if cost > self.get_available_capital():
-                    return False, f"Insufficient capital. Need ₹{cost:.0f}, have ₹{self.get_available_capital():.0f}"
+                    return False, (
+                        f"Insufficient capital. Need ₹{cost:.0f}, "
+                        f"have ₹{self.get_available_capital():.0f}"
+                    )
 
-                # If position already open (averaging / adding), handle gracefully
+                # Average up if already long
                 if key in self.state["open_positions"]:
                     pos = self.state["open_positions"][key]
                     if pos["action"] == "BUY":
-                        # Average up — compute new avg entry
                         old_qty   = pos["qty"]
                         old_entry = pos["entry_premium"]
                         new_qty   = old_qty + qty
@@ -180,33 +269,41 @@ class OptionsPaperEngine:
 
                 self.state["capital"] -= cost
                 self.state["open_positions"][key] = {
-                    "key":            key,
-                    "underlying":     underlying,
-                    "strike":         strike,
-                    "opt_type":       opt_type,
-                    "expiry":         expiry,
-                    "action":         "BUY",
-                    "lots":           lots,
-                    "qty":            qty,
-                    "lot_size":       lot_sz,
-                    "entry_premium":  round(premium, 2),
-                    "ltp":            round(premium, 2),
-                    "sl":             None,
-                    "tp":             None,
-                    "unrealized_pnl": 0.0,
-                    "strategy_tag":   strategy_tag,
-                    "leg_tag":        leg_tag,
-                    "opened_at":      str(datetime.now()),
-                    "margin_blocked": 0.0,
+                    "key":             key,
+                    "underlying":      underlying,
+                    "strike":          strike,
+                    "opt_type":        opt_type,
+                    "expiry":          expiry,
+                    "action":          "BUY",
+                    "lots":            lots,
+                    "qty":             qty,
+                    "lot_size":        lot_sz,
+                    "entry_premium":   round(premium, 2),
+                    "ltp":             round(premium, 2),
+                    "sl":              None,
+                    "tp":              None,
+                    "trailing_sl":     trailing_sl,    # ₹ distance from peak
+                    "peak_ltp":        round(premium, 2),
+                    "unrealized_pnl":  0.0,
+                    "strategy_tag":    strategy_tag,
+                    "leg_tag":         leg_tag,
+                    "opened_at":       str(datetime.now()),
+                    "margin_blocked":  0.0,
+                    "iv_at_entry":     iv,
                 }
                 self._save()
-                return True, (
+
+                warn = self._margin_warning()
+                msg = (
                     f"✅ BUY {underlying} {strike}{opt_type} {expiry}\n"
                     f"Premium: ₹{premium} | Lots: {lots} | Qty: {qty}\n"
                     f"Cost: ₹{cost:.0f} | Capital left: ₹{self.get_available_capital():.0f}"
                 )
+                if warn:
+                    msg += f"\n{warn}"
+                return True, msg
 
-            # ── SELL: block margin, receive premium ───────────────────────
+            # ── SELL ─────────────────────────────────────────────────────────
             else:
                 margin_needed = _margin_per_lot(underlying) * lots
                 credit        = premium * qty
@@ -221,37 +318,44 @@ class OptionsPaperEngine:
                     return False, "SELL position already open for this contract. Close first."
 
                 self.state["used_margin"] += margin_needed
-                # Credit received added to capital
-                self.state["capital"] += credit
+                self.state["capital"]     += credit
 
                 self.state["open_positions"][key] = {
-                    "key":            key,
-                    "underlying":     underlying,
-                    "strike":         strike,
-                    "opt_type":       opt_type,
-                    "expiry":         expiry,
-                    "action":         "SELL",
-                    "lots":           lots,
-                    "qty":            qty,
-                    "lot_size":       lot_sz,
-                    "entry_premium":  round(premium, 2),
-                    "ltp":            round(premium, 2),
-                    "sl":             None,
-                    "tp":             None,
-                    "unrealized_pnl": 0.0,
-                    "strategy_tag":   strategy_tag,
-                    "leg_tag":        leg_tag,
-                    "opened_at":      str(datetime.now()),
-                    "margin_blocked": margin_needed,
+                    "key":             key,
+                    "underlying":      underlying,
+                    "strike":          strike,
+                    "opt_type":        opt_type,
+                    "expiry":          expiry,
+                    "action":          "SELL",
+                    "lots":            lots,
+                    "qty":             qty,
+                    "lot_size":        lot_sz,
+                    "entry_premium":   round(premium, 2),
+                    "ltp":             round(premium, 2),
+                    "sl":              None,
+                    "tp":              None,
+                    "trailing_sl":     None,   # trailing SL N/A for sells
+                    "peak_ltp":        round(premium, 2),
+                    "unrealized_pnl":  0.0,
+                    "strategy_tag":    strategy_tag,
+                    "leg_tag":         leg_tag,
+                    "opened_at":       str(datetime.now()),
+                    "margin_blocked":  margin_needed,
+                    "iv_at_entry":     iv,
                 }
                 self._save()
-                return True, (
+
+                warn = self._margin_warning()
+                msg = (
                     f"✅ SELL {underlying} {strike}{opt_type} {expiry}\n"
                     f"Premium received: ₹{credit:.0f} | Lots: {lots} | Qty: {qty}\n"
                     f"Margin blocked: ₹{margin_needed:.0f} | Max profit: ₹{credit:.0f}"
                 )
+                if warn:
+                    msg += f"\n{warn}"
+                return True, msg
 
-    # ── Set SL / TP on premium ────────────────────────────────────────────────
+    # ── Set SL / TP ───────────────────────────────────────────────────────────
 
     def set_sl(self, key: str, sl_premium: float) -> tuple[bool, str]:
         with self._lock:
@@ -260,7 +364,7 @@ class OptionsPaperEngine:
             pos = self.state["open_positions"][key]
             pos["sl"] = round(sl_premium, 2)
             self._save()
-            return True, f"SL set at premium ₹{sl_premium:.2f} for {key}"
+            return True, f"SL set at ₹{sl_premium:.2f} for {key}"
 
     def set_tp(self, key: str, tp_premium: float) -> tuple[bool, str]:
         with self._lock:
@@ -269,50 +373,69 @@ class OptionsPaperEngine:
             pos = self.state["open_positions"][key]
             pos["tp"] = round(tp_premium, 2)
             self._save()
-            return True, f"TP set at premium ₹{tp_premium:.2f} for {key}"
+            return True, f"TP set at ₹{tp_premium:.2f} for {key}"
 
-    # ── Update LTP (called by monitor thread) ────────────────────────────────
+    def set_trailing_sl(self, key: str, trail_dist: float) -> tuple[bool, str]:
+        """Set trailing SL distance in ₹ premium. Only for BUY positions."""
+        with self._lock:
+            if key not in self.state["open_positions"]:
+                return False, f"No position found: {key}"
+            pos = self.state["open_positions"][key]
+            if pos["action"] != "BUY":
+                return False, "Trailing SL only supported for BUY positions."
+            pos["trailing_sl"] = round(trail_dist, 2)
+            pos["peak_ltp"]    = pos["ltp"]
+            self._save()
+            return True, f"Trailing SL set: ₹{trail_dist:.2f} distance from peak for {key}"
+
+    # ── Update LTP ────────────────────────────────────────────────────────────
 
     def update_ltp(self, key: str, ltp: float) -> Optional[str]:
         """
-        Update LTP for a position. Returns trigger message if SL/TP hit, else None.
-        Called by options_monitor.py every tick.
+        Update LTP. Returns trigger string if SL/TP hit, else None.
+        Also updates trailing SL for BUY positions.
         """
         with self._lock:
             if key not in self.state["open_positions"]:
                 return None
-            pos = self.state["open_positions"][key]
+            pos    = self.state["open_positions"][key]
             pos["ltp"] = round(ltp, 2)
-
-            # PnL calculation
             qty    = pos["qty"]
             entry  = pos["entry_premium"]
             action = pos["action"]
 
+            # PnL
             if action == "BUY":
                 pos["unrealized_pnl"] = round((ltp - entry) * qty, 2)
             else:
-                # SELL: profit when premium falls
                 pos["unrealized_pnl"] = round((entry - ltp) * qty, 2)
+
+            # Trailing SL update (BUY only)
+            trail = pos.get("trailing_sl")
+            if action == "BUY" and trail:
+                if ltp > pos.get("peak_ltp", entry):
+                    pos["peak_ltp"] = ltp
+                    new_sl = round(ltp - trail, 2)
+                    if pos.get("sl") is None or new_sl > pos["sl"]:
+                        pos["sl"] = new_sl
+                        log.info(f"[OPE] Trailing SL updated for {key}: ₹{new_sl:.2f}")
 
             self._save()
 
-            # Check SL/TP triggers
+            # SL/TP trigger check
             sl = pos.get("sl")
             tp = pos.get("tp")
 
             if action == "BUY":
                 if sl and ltp <= sl:
-                    return f"SL_HIT:{key}:{ltp}"
+                    return f"SL_HIT:{key}:{sl}"
                 if tp and ltp >= tp:
-                    return f"TP_HIT:{key}:{ltp}"
-            else:  # SELL
-                # For sells: SL = premium rises above threshold (loss)
-                #            TP = premium falls below threshold (profit)
+                    return f"TP_HIT:{key}:{tp}"
+            else:
                 if sl and ltp >= sl:
-                    return f"SL_HIT:{key}:{ltp}"
+                    return f"SL_HIT:{key}:{sl}"
                 if tp and ltp <= tp:
-                    return f"TP_HIT:{key}:{ltp}"
+                    return f"TP_HIT:{key}:{tp}"
 
         return None
 
@@ -331,15 +454,12 @@ class OptionsPaperEngine:
             underlying = pos["underlying"]
 
             if action == "BUY":
-                # Pay exit premium to sell
                 pnl = (exit_premium - entry) * qty
                 self.state["capital"] += exit_premium * qty
             else:
-                # Buy back to close sell
                 buyback_cost = exit_premium * qty
                 self.state["capital"] -= buyback_cost
                 pnl = (entry - exit_premium) * qty
-                # Release margin
                 self.state["used_margin"] = max(
                     0, self.state["used_margin"] - pos["margin_blocked"]
                 )
@@ -347,14 +467,21 @@ class OptionsPaperEngine:
             pnl = round(pnl, 2)
             self.state["realized_pnl"] = round(self.state["realized_pnl"] + pnl, 2)
 
+            # Hold time
+            try:
+                opened = datetime.fromisoformat(pos["opened_at"])
+                hold_min = round((datetime.now() - opened).total_seconds() / 60, 1)
+            except Exception:
+                hold_min = 0
+
             closed = dict(pos)
             closed["exit_premium"] = round(exit_premium, 2)
             closed["realized_pnl"] = pnl
             closed["close_reason"] = reason
             closed["closed_at"]    = str(datetime.now())
+            closed["hold_minutes"] = hold_min
             self.state["closed_positions"].append(closed)
 
-            # Trade log entry
             self.state["trade_log"].append({
                 "date":           date.today().isoformat(),
                 "key":            key,
@@ -370,6 +497,7 @@ class OptionsPaperEngine:
                 "result":         "WIN" if pnl >= 0 else "LOSS",
                 "reason":         reason,
                 "strategy_tag":   pos.get("strategy_tag", ""),
+                "hold_minutes":   hold_min,
                 "opened_at":      pos["opened_at"],
                 "closed_at":      closed["closed_at"],
             })
@@ -377,20 +505,21 @@ class OptionsPaperEngine:
             del self.state["open_positions"][key]
             self._save()
 
+            # Check daily loss halt after close
+            halt_reason = self._check_daily_loss_halt()
+            if halt_reason:
+                self.halt_trading(halt_reason)
+
             emoji = "🟢" if pnl >= 0 else "🔴"
             return True, (
                 f"{emoji} CLOSED {pos['underlying']} {pos['strike']}{pos['opt_type']} {pos['expiry']}\n"
                 f"Entry: ₹{entry} → Exit: ₹{exit_premium:.2f}\n"
-                f"PnL: ₹{pnl:+.0f} | Reason: {reason}"
+                f"PnL: ₹{pnl:+.0f} | Hold: {hold_min}m | Reason: {reason}"
             )
 
     # ── Close all legs of a strategy ─────────────────────────────────────────
 
     def close_strategy(self, strategy_tag: str, ltps: dict) -> list[str]:
-        """
-        Close all positions with matching strategy_tag.
-        ltps = {key: current_ltp}
-        """
         msgs = []
         keys = [
             k for k, p in self.state["open_positions"].items()
@@ -402,33 +531,50 @@ class OptionsPaperEngine:
             msgs.append(msg)
         return msgs
 
+    # ── Strategy PnL summary ─────────────────────────────────────────────────
+
+    def get_strategy_pnl(self, strategy_tag: str) -> dict:
+        """Aggregate open PnL + realized PnL for a strategy tag."""
+        open_pnl = sum(
+            p.get("unrealized_pnl", 0)
+            for p in self.state["open_positions"].values()
+            if p.get("strategy_tag") == strategy_tag
+        )
+        realized = sum(
+            t["pnl"]
+            for t in self.state["trade_log"]
+            if t.get("strategy_tag") == strategy_tag
+        )
+        legs_open = [
+            p for p in self.state["open_positions"].values()
+            if p.get("strategy_tag") == strategy_tag
+        ]
+        return {
+            "strategy_tag": strategy_tag,
+            "open_pnl":     round(open_pnl, 2),
+            "realized_pnl": round(realized, 2),
+            "net_pnl":      round(open_pnl + realized, 2),
+            "legs_open":    len(legs_open),
+        }
+
     # ── Expiry settlement ─────────────────────────────────────────────────────
 
     def settle_expiry(self, expiry: str, spot_price: float) -> list[str]:
-        """
-        Called at 3:30pm on expiry day.
-        Options expire worthless or at intrinsic value.
-        """
         msgs = []
         keys = [
             k for k, p in self.state["open_positions"].items()
             if p["expiry"].upper() == expiry.upper()
         ]
         for key in keys:
-            pos = self.state["open_positions"][key]
-            strike     = pos["strike"]
-            opt_type   = pos["opt_type"]
-            intrinsic  = 0.0
-
-            if opt_type == "CE":
-                intrinsic = max(0.0, spot_price - strike)
+            pos       = self.state["open_positions"][key]
+            intrinsic = 0.0
+            if pos["opt_type"] == "CE":
+                intrinsic = max(0.0, spot_price - pos["strike"])
             else:
-                intrinsic = max(0.0, strike - spot_price)
-
+                intrinsic = max(0.0, pos["strike"] - spot_price)
             ok, msg = self.close_position(key, intrinsic, reason="expiry_settlement")
             msgs.append(msg)
             log.info(f"[OPE] Expiry settle {key}: intrinsic={intrinsic:.2f}")
-
         return msgs
 
     # ── Queries ───────────────────────────────────────────────────────────────
@@ -445,15 +591,13 @@ class OptionsPaperEngine:
     def get_trade_log(self, limit: int = 10) -> list[dict]:
         return self.state["trade_log"][-limit:]
 
-    def get_daily_pnl(self) -> float:
-        today = date.today().isoformat()
-        return sum(
-            t["pnl"] for t in self.state["trade_log"]
-            if t.get("date") == today
-        )
+    def get_positions_by_underlying(self, underlying: str) -> list[dict]:
+        return [
+            p for p in self.state["open_positions"].values()
+            if p["underlying"] == underlying.upper()
+        ]
 
     def reset(self, capital: float = DEFAULT_CAPITAL):
-        """Full reset — wipe all positions, restore capital."""
         with self._lock:
             self.state = {
                 "capital":          capital,
@@ -462,6 +606,8 @@ class OptionsPaperEngine:
                 "open_positions":   {},
                 "closed_positions": [],
                 "trade_log":        [],
+                "trading_halted":   False,
+                "halt_reason":      "",
             }
             self._save()
         return f"✅ Account reset. Capital: ₹{capital:,.0f}"

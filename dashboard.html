@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trading Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1117; color: #e6edf3; font-family: 'Segoe UI', sans-serif; font-size: 14px; }
+
+  .header {
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .header h1 { font-size: 18px; font-weight: 600; color: #58a6ff; }
+  .header .time { color: #8b949e; font-size: 12px; }
+  .refresh-btn {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .refresh-btn:hover { background: #30363d; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; padding: 20px 24px 0; }
+  .card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .card .label { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .card .value { font-size: 22px; font-weight: 700; }
+  .card .sub { font-size: 11px; color: #8b949e; margin-top: 4px; }
+  .pos { color: #3fb950; }
+  .neg { color: #f85149; }
+  .neu { color: #e6edf3; }
+
+  .section { padding: 20px 24px; }
+  .section h2 { font-size: 14px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    background: #161b22;
+    color: #8b949e;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid #30363d;
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid #21262d; font-size: 13px; }
+  tr:hover td { background: #161b22; }
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .tag-buy  { background: #1a3a2a; color: #3fb950; border: 1px solid #2d6a3f; }
+  .tag-sell { background: #3a1a1a; color: #f85149; border: 1px solid #6a2d2d; }
+  .tag-auto { background: #1a2a3a; color: #58a6ff; border: 1px solid #2d4a6a; }
+  .tag-manual { background: #2a2a1a; color: #d29922; border: 1px solid #5a4a1a; }
+
+  .pnl-bar-wrap { width: 100%; background: #21262d; border-radius: 4px; height: 6px; margin-top: 4px; overflow: hidden; }
+  .pnl-bar { height: 6px; border-radius: 4px; transition: width 0.3s; }
+
+  .summary-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .summary-box {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .summary-box .s-label { color: #8b949e; font-size: 11px; margin-bottom: 4px; }
+  .summary-box .s-val { font-size: 16px; font-weight: 700; }
+
+  .badge {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-left: 6px;
+  }
+  .badge-green { background: #1a3a2a; color: #3fb950; }
+  .badge-red   { background: #3a1a1a; color: #f85149; }
+  .badge-blue  { background: #1a2a3a; color: #58a6ff; }
+
+  #loading { text-align: center; padding: 60px; color: #8b949e; }
+  .dot-anim::after { content: '...'; animation: dots 1.2s steps(4, end) infinite; }
+  @keyframes dots { 0%, 20% { content: ''; } 40% { content: '.'; } 60% { content: '..'; } 80%, 100% { content: '...'; } }
+
+  .divider { border: none; border-top: 1px solid #21262d; margin: 0 24px; }
+
+  .net-pnl-banner {
+    margin: 16px 24px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .net-pnl-banner .big { font-size: 32px; font-weight: 800; }
+  .net-pnl-banner .label { color: #8b949e; font-size: 12px; margin-bottom: 4px; }
+  .accounts-row { display: flex; gap: 32px; }
+  .acc-item .acc-label { color: #8b949e; font-size: 11px; }
+  .acc-item .acc-val { font-size: 15px; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>📊 Trading Dashboard</h1>
+    <div class="time" id="last-updated">Loading<span class="dot-anim"></span></div>
+  </div>
+  <button class="refresh-btn" onclick="loadData()">⟳ Refresh</button>
+</div>
+
+<div id="loading">Loading data<span class="dot-anim"></span></div>
+<div id="content" style="display:none">
+
+  <!-- NET PNL BANNER -->
+  <div class="net-pnl-banner">
+    <div>
+      <div class="label">TOTAL NET PnL (All Accounts)</div>
+      <div class="big" id="total-net-pnl">—</div>
+    </div>
+    <div class="accounts-row">
+      <div class="acc-item">
+        <div class="acc-label">Options Paper</div>
+        <div class="acc-val" id="opt-net">—</div>
+      </div>
+      <div class="acc-item">
+        <div class="acc-label">Virtual Exchange</div>
+        <div class="acc-val" id="virt-net">—</div>
+      </div>
+      <div class="acc-item">
+        <div class="acc-label">Crypto (USD)</div>
+        <div class="acc-val" id="crypto-net">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUMMARY CARDS -->
+  <div class="grid" id="cards"></div>
+
+  <!-- OPEN OPTIONS POSITIONS -->
+  <div class="section">
+    <h2>Open Option Positions</h2>
+    <table id="opt-table">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Action</th>
+          <th>Lots</th>
+          <th>Entry ₹</th>
+          <th>LTP ₹</th>
+          <th>SL ₹</th>
+          <th>TP ₹</th>
+          <th>Unrealized PnL</th>
+          <th>Strategy</th>
+          <th>Opened</th>
+        </tr>
+      </thead>
+      <tbody id="opt-body"></tbody>
+    </table>
+  </div>
+
+  <hr class="divider">
+
+  <!-- VIRTUAL EXCHANGE POSITIONS -->
+  <div class="section">
+    <h2>Virtual Exchange (Indian Stocks)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Side</th>
+          <th>Qty</th>
+          <th>Entry ₹</th>
+          <th>LTP ₹</th>
+          <th>PnL ₹</th>
+          <th>Opened</th>
+        </tr>
+      </thead>
+      <tbody id="virt-body"></tbody>
+    </table>
+  </div>
+
+  <hr class="divider">
+
+  <!-- CRYPTO TRADES -->
+  <div class="section">
+    <h2>Crypto Trade History (BTC/ETH)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Symbol</th>
+          <th>Side</th>
+          <th>Entry</th>
+          <th>Exit</th>
+          <th>PnL (USD)</th>
+          <th>Result</th>
+          <th>Hold</th>
+        </tr>
+      </thead>
+      <tbody id="crypto-body"></tbody>
+    </table>
+  </div>
+
+  <hr class="divider">
+
+  <!-- CLOSED OPTIONS TRADES -->
+  <div class="section">
+    <h2>Closed Option Trades</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Symbol</th>
+          <th>Action</th>
+          <th>Lots</th>
+          <th>Entry ₹</th>
+          <th>Exit ₹</th>
+          <th>PnL ₹</th>
+          <th>Result</th>
+          <th>Reason</th>
+        </tr>
+      </thead>
+      <tbody id="closed-opt-body"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+function fmt(n, prefix='₹') {
+  if (n == null) return '—';
+  const v = parseFloat(n);
+  const s = Math.abs(v).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  return (v >= 0 ? '+' : '-') + prefix + s;
+}
+function fmtUsd(n) { return fmt(n, '$'); }
+function cls(n) { return parseFloat(n) >= 0 ? 'pos' : 'neg'; }
+
+async function loadJson(path) {
+  try {
+    const r = await fetch(path + '?t=' + Date.now());
+    return await r.json();
+  } catch(e) { return null; }
+}
+
+async function loadCsv(path) {
+  try {
+    const r = await fetch(path + '?t=' + Date.now());
+    const text = await r.text();
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(',');
+    return lines.slice(1).map(l => {
+      const vals = l.split(',');
+      const obj = {};
+      headers.forEach((h, i) => obj[h.trim()] = (vals[i] || '').trim());
+      return obj;
+    });
+  } catch(e) { return []; }
+}
+
+async function loadData() {
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('content').style.display = 'none';
+
+  const [opt, virt, trades] = await Promise.all([
+    loadJson('options_paper_account.json'),
+    loadJson('virtual_account.json'),
+    loadCsv('trades_log.csv'),
+  ]);
+
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('content').style.display = 'block';
+  document.getElementById('last-updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+
+  // ── OPTIONS ──────────────────────────────────────────────────────────────
+  const optPositions = opt ? Object.values(opt.open_positions || {}) : [];
+  const optOpenPnl   = optPositions.reduce((s, p) => s + (p.unrealized_pnl || 0), 0);
+  const optRealPnl   = opt ? (opt.realized_pnl || 0) : 0;
+  const optNetPnl    = optOpenPnl + optRealPnl;
+  const optCapital   = opt ? opt.capital : 0;
+  const optMargin    = opt ? opt.used_margin : 0;
+
+  document.getElementById('opt-net').innerHTML = `<span class="${cls(optNetPnl)}">${fmt(optNetPnl)}</span>`;
+
+  // Options open positions table
+  const optBody = document.getElementById('opt-body');
+  optBody.innerHTML = '';
+  if (optPositions.length === 0) {
+    optBody.innerHTML = '<tr><td colspan="10" style="color:#8b949e;text-align:center;padding:20px">No open positions</td></tr>';
+  } else {
+    optPositions.forEach(p => {
+      const pnl = p.unrealized_pnl || 0;
+      const pct = p.entry_premium > 0 ? ((p.ltp - p.entry_premium) / p.entry_premium * 100).toFixed(1) : 0;
+      const maxPct = 100;
+      const barPct = Math.min(Math.abs(pnl) / 2000 * 100, 100);
+      const barColor = pnl >= 0 ? '#3fb950' : '#f85149';
+      const actionTag = p.action === 'BUY' ? 'tag-buy' : 'tag-sell';
+      const strat = p.strategy_tag || 'manual';
+      const stratTag = strat.includes('auto') ? 'tag-auto' : 'tag-manual';
+      const opened = p.opened_at ? p.opened_at.split('.')[0] : '—';
+      optBody.innerHTML += `
+        <tr>
+          <td><b>${p.underlying} ${p.strike}${p.opt_type}</b> <span style="color:#8b949e;font-size:11px">${p.expiry}</span></td>
+          <td><span class="tag ${actionTag}">${p.action}</span></td>
+          <td>${p.lots} <span style="color:#8b949e">(${p.qty})</span></td>
+          <td>₹${p.entry_premium}</td>
+          <td>₹${p.ltp} <span style="color:#8b949e;font-size:11px">${pct}%</span></td>
+          <td>${p.sl ? '₹' + p.sl : '<span style="color:#8b949e">—</span>'}</td>
+          <td>${p.tp ? '₹' + p.tp : '<span style="color:#8b949e">—</span>'}</td>
+          <td>
+            <span class="${cls(pnl)}">${fmt(pnl)}</span>
+            <div class="pnl-bar-wrap"><div class="pnl-bar" style="width:${barPct}%;background:${barColor}"></div></div>
+          </td>
+          <td><span class="tag ${stratTag}">${strat}</span></td>
+          <td style="color:#8b949e;font-size:11px">${opened}</td>
+        </tr>`;
+    });
+  }
+
+  // Closed options
+  const closedOpt = opt ? (opt.trade_log || []) : [];
+  const closedBody = document.getElementById('closed-opt-body');
+  closedBody.innerHTML = '';
+  if (closedOpt.length === 0) {
+    closedBody.innerHTML = '<tr><td colspan="9" style="color:#8b949e;text-align:center;padding:20px">No closed trades yet</td></tr>';
+  } else {
+    [...closedOpt].reverse().forEach(t => {
+      const pnl = t.pnl || 0;
+      closedBody.innerHTML += `
+        <tr>
+          <td style="color:#8b949e">${t.date || '—'}</td>
+          <td><b>${t.underlying} ${t.strike}${t.opt_type}</b> <span style="color:#8b949e;font-size:11px">${t.expiry}</span></td>
+          <td><span class="tag ${t.action==='BUY'?'tag-buy':'tag-sell'}">${t.action}</span></td>
+          <td>${t.lots}</td>
+          <td>₹${t.entry_premium}</td>
+          <td>₹${t.exit_premium}</td>
+          <td class="${cls(pnl)}">${fmt(pnl)}</td>
+          <td><span class="badge ${pnl>=0?'badge-green':'badge-red'}">${t.result||'—'}</span></td>
+          <td style="color:#8b949e;font-size:11px">${t.reason||'—'}</td>
+        </tr>`;
+    });
+  }
+
+  // ── VIRTUAL EXCHANGE ─────────────────────────────────────────────────────
+  const virtOpen    = virt ? (virt.open_positions || []) : [];
+  const virtOpenPnl = virtOpen.reduce((s, p) => s + (p.pnl || 0), 0);
+  const virtRealPnl = virt ? (virt.realized_pnl || 0) : 0;
+  const virtNet     = virtOpenPnl + virtRealPnl;
+  document.getElementById('virt-net').innerHTML = `<span class="${cls(virtNet)}">${fmt(virtNet)}</span>`;
+
+  const virtBody = document.getElementById('virt-body');
+  virtBody.innerHTML = '';
+  if (virtOpen.length === 0) {
+    virtBody.innerHTML = '<tr><td colspan="7" style="color:#8b949e;text-align:center;padding:20px">No open positions</td></tr>';
+  } else {
+    virtOpen.forEach(p => {
+      const pnl = p.pnl || 0;
+      virtBody.innerHTML += `
+        <tr>
+          <td><b>${p.symbol}</b></td>
+          <td><span class="tag ${p.side==='BUY'?'tag-buy':'tag-sell'}">${p.side}</span></td>
+          <td>${p.qty}</td>
+          <td>₹${p.entry}</td>
+          <td>₹${p.ltp}</td>
+          <td class="${cls(pnl)}">${fmt(pnl)}</td>
+          <td style="color:#8b949e;font-size:11px">${p.opened_at ? p.opened_at.split('.')[0] : '—'}</td>
+        </tr>`;
+    });
+  }
+
+  // ── CRYPTO ───────────────────────────────────────────────────────────────
+  const cryptoNet = trades.reduce((s, t) => s + parseFloat(t.pnl_usd || 0), 0);
+  document.getElementById('crypto-net').innerHTML = `<span class="${cls(cryptoNet)}">${fmtUsd(cryptoNet)}</span>`;
+
+  const cryptoBody = document.getElementById('crypto-body');
+  cryptoBody.innerHTML = '';
+  if (trades.length === 0) {
+    cryptoBody.innerHTML = '<tr><td colspan="8" style="color:#8b949e;text-align:center;padding:20px">No crypto trades logged</td></tr>';
+  } else {
+    [...trades].reverse().forEach(t => {
+      const pnl = parseFloat(t.pnl_usd || 0);
+      const sym = (t.symbol || '').split(':')[0];
+      cryptoBody.innerHTML += `
+        <tr>
+          <td style="color:#8b949e">${t.date}</td>
+          <td><b>${sym}</b></td>
+          <td><span class="tag ${t.side==='buy'?'tag-buy':'tag-sell'}">${(t.side||'').toUpperCase()}</span></td>
+          <td>${parseFloat(t.entry_price||0).toLocaleString()}</td>
+          <td>${parseFloat(t.exit_price||0).toLocaleString()}</td>
+          <td class="${cls(pnl)}">${fmtUsd(pnl)}</td>
+          <td><span class="badge ${pnl>=0?'badge-green':'badge-red'}">${(t.result||'').toUpperCase()}</span></td>
+          <td style="color:#8b949e">${t.hold_time_min}m</td>
+        </tr>`;
+    });
+  }
+
+  // ── TOTAL NET PNL ─────────────────────────────────────────────────────────
+  // Convert crypto USD to INR approx (rough: 1 USD = 83 INR)
+  const USD_TO_INR = 83;
+  const totalNet = optNetPnl + virtNet + (cryptoNet * USD_TO_INR);
+  const totalEl = document.getElementById('total-net-pnl');
+  totalEl.textContent = fmt(totalNet);
+  totalEl.className = 'big ' + cls(totalNet);
+
+  // ── SUMMARY CARDS ─────────────────────────────────────────────────────────
+  const cards = document.getElementById('cards');
+  cards.innerHTML = `
+    <div class="card">
+      <div class="label">Options Capital</div>
+      <div class="value neu">₹${(optCapital/1000).toFixed(1)}K</div>
+      <div class="sub">Margin used: ₹${(optMargin/1000).toFixed(0)}K</div>
+    </div>
+    <div class="card">
+      <div class="label">Options Open PnL</div>
+      <div class="value ${cls(optOpenPnl)}">${fmt(optOpenPnl)}</div>
+      <div class="sub">${optPositions.length} position${optPositions.length!==1?'s':''} open</div>
+    </div>
+    <div class="card">
+      <div class="label">Options Realized</div>
+      <div class="value ${cls(optRealPnl)}">${fmt(optRealPnl)}</div>
+      <div class="sub">${closedOpt.length} trade${closedOpt.length!==1?'s':''} closed</div>
+    </div>
+    <div class="card">
+      <div class="label">Virtual Balance</div>
+      <div class="value neu">₹${virt ? (virt.balance/1000).toFixed(1)+'K' : '—'}</div>
+      <div class="sub">Realized: ${fmt(virtRealPnl)}</div>
+    </div>
+    <div class="card">
+      <div class="label">Crypto PnL</div>
+      <div class="value ${cls(cryptoNet)}">${fmtUsd(cryptoNet)}</div>
+      <div class="sub">${trades.length} trade${trades.length!==1?'s':''} total</div>
+    </div>
+    <div class="card">
+      <div class="label">Crypto Win Rate</div>
+      <div class="value neu">${trades.length > 0 ? Math.round(trades.filter(t=>t.result==='win').length/trades.length*100) : 0}%</div>
+      <div class="sub">${trades.filter(t=>t.result==='win').length}W / ${trades.filter(t=>t.result==='loss').length}L</div>
+    </div>
+  `;
+}
+
+// Auto-refresh every 10 seconds
+loadData();
+setInterval(loadData, 10000);
+</script>
+</body>
+</html>

@@ -2049,7 +2049,13 @@ def _place_auto_trade(sig: dict):
                 leg_tag     = f"short_{opt_type.lower()}",
             )
             msgs.append(msg)
-            if not ok:
+            if ok:
+                # SELL: SL = premium rises 50% (loss), TP = premium falls 50% (profit)
+                from options_paper_engine import _pos_key
+                key = _pos_key(index, strike, opt_type, expiry)
+                engine.set_sl(key, round(premium * 1.50, 2))
+                engine.set_tp(key, round(premium * 0.50, 2))
+            else:
                 all_ok = False
         return all_ok, "\n".join(msgs)
 
@@ -2072,7 +2078,13 @@ def _place_auto_trade(sig: dict):
                 leg_tag     = f"short_{opt_type.lower()}",
             )
             msgs.append(msg)
-            if not ok:
+            if ok:
+                # SELL: SL = premium rises 50% (loss), TP = premium falls 50% (profit)
+                from options_paper_engine import _pos_key
+                key = _pos_key(index, strike, opt_type, expiry)
+                engine.set_sl(key, round(premium * 1.50, 2))
+                engine.set_tp(key, round(premium * 0.50, 2))
+            else:
                 all_ok = False
         return all_ok, "\n".join(msgs)
 

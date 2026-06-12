@@ -43,7 +43,11 @@ from state_manager import (
     reconcile_positions,
     save_seen_grabs, load_seen_grabs,
 )
-
+from back_test import (
+    add_emas, detect_liquidity_grabs, detect_bos, detect_fvg,
+    SYMBOL_CONFIG, MIN_RR, RISK_PER_TRADE, ACCOUNT_SIZE,
+    SWING_LOOKBACK, ENTRY_WINDOW, MAX_TRADES_PER_DAY, DAILY_LOSS_LIMIT,
+)
 # ─── Import strategy logic ──────────────────────────────────────────────────
 sys.path.insert(0, os.path.dirname(__file__))
 from back_test import (
@@ -65,7 +69,7 @@ from back_test import (
 
 DEMO_HOST    = "https://cdn-ind.testnet.deltaex.org"
 LOG_FILE     = "trades_log.csv"
-POLL_SECONDS = 30    # how often to check inside a 15m window
+POLL_SECONDS = 60    # how often to check inside a 15m window
 CANDLES_4H   = 300   # lookback for 4H fetch
 CANDLES_15M  = 800   # lookback for 15M fetch
 
@@ -622,6 +626,7 @@ def main():
         save_seen_grabs(seen_grabs)
 
     log.info("\nWarm-start done. Watching for NEW signals only.\n")
+    fetch_failures = {}
 
     # ── Main loop ───────────────────────────────────────────────────────────
     while True:
@@ -633,7 +638,7 @@ def main():
         day_key  = now.date()
         equity   = get_balance(ex)
 
-        log.info(f"\n── {now.strftime('%Y-%m-%d %H:%M')} UTC  equity={equity:.2f} USD ──")
+        log.info(f"\n--{now.strftime('%Y-%m-%d %H:%M')} UTC  equity={equity:.2f} USD --")
 
         # Check open positions
         with tracker._lock:
@@ -672,9 +677,14 @@ def main():
             df_4h  = fetch_candles(ex, ccxt_sym, "4h",  CANDLES_4H)
             df_15m = fetch_candles(ex, ccxt_sym, "15m", CANDLES_15M)
             if df_4h is None or df_15m is None:
+                fetch_failures[sym_key] = fetch_failures.get(sym_key, 0) + 1
+                if fetch_failures[sym_key] == 3:
+                    tg(f"⚠️ <b>Fetch Alert</b>: {sym_key} failed 3 consecutive times. Check connection.")
+                    log.warning(f"  {sym_key}: 3 consecutive fetch failures")
                 continue
             if len(df_4h) < 50 or len(df_15m) < 100:
-                continue
+                 continue
+            fetch_failures[sym_key] = 0    
 
             signal = find_fresh_signal(sym_key, df_4h, df_15m, seen_grabs, equity)
             if signal is None:
@@ -704,6 +714,7 @@ def main():
                     "tp":           tp,
                     "opened_at":    opened_at,
                     "contract_size":contract_size,
+                    "trail_dist":    round(abs(actual_entry - sl) * 0.5, 2),
                 })
                 daily_trades[day_key] = daily_trades.get(day_key, 0) + 1
                 save_daily(daily_trades, daily_loss)  # ← persist trade count

@@ -2,12 +2,14 @@
 =============================================================
 STRATEGY: 4H Liquidity Grab + 15M SMC Entry
 EXCHANGE: Delta Exchange (India)
-SYMBOLS:  BTCUSDT, ETHUSDT, SOLUSDT
+SYMBOLS:  BTCUSDT, ETHUSDT
+VALIDATION: Walk-Forward + Monte Carlo
 =============================================================
 
 HOW IT WORKS:
   Phase 1 — 4H: Detect liquidity grabs (sweep of swing high/low with rejection)
   Phase 2 — 15M: Wait for BOS + FVG/OB pullback → enter
+  Phase 3 — Validate: Walk-forward OOS test + Monte Carlo confidence
 
 INSTALL:
   pip install ccxt pandas numpy matplotlib
@@ -28,51 +30,52 @@ warnings.filterwarnings("ignore")
 
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
 
-# Delta Exchange symbol aliases
 SYMBOL_ALIASES = {
-    "BTCUSDT":  ["BTCUSDT", "BTC/USDT:USDT"],
-    "ETHUSDT":  ["ETHUSDT", "ETH/USDT:USDT"],
+    "BTCUSDT": ["BTCUSDT", "BTC/USDT:USDT"],
+    "ETHUSDT": ["ETHUSDT", "ETH/USDT:USDT"],
 }
 
 SYMBOLS = list(SYMBOL_ALIASES.keys())
 
-LOOKBACK_DAYS       = 180      # 6 months
-RISK_PER_TRADE      = 0.01     # 1% account risk
-ACCOUNT_SIZE        = 1000     # USDT start capital
-MIN_RR              = 3.0      # minimum reward:risk
-MAX_TRADES_PER_DAY  = 2
-DAILY_LOSS_LIMIT    = 0.03     # 3% of equity
+LOOKBACK_DAYS      = 365
+RISK_PER_TRADE     = 0.01
+ACCOUNT_SIZE       = 1000
+MIN_RR             = 3.0
+MAX_TRADES_PER_DAY = 2
+DAILY_LOSS_LIMIT   = 0.03
 
-SWING_LOOKBACK      = 3        # candles each side for swing detection
-MIN_WICK_PCT        = 0.003    # min wick size for grab validity
-ENTRY_WINDOW        = 16       # 15M candles to look for BOS after grab (= 4H)
+SWING_LOOKBACK = 3
+MIN_WICK_PCT   = 0.003
+ENTRY_WINDOW   = 16
 
-# Per-symbol tuning — tighter filters for noisier assets
+# Walk-forward config
+WF_TRAIN_PCT  = 0.70   # 70% train, 30% OOS
+WF_WINDOWS    = 2      # 2 windows = bigger slices, more trades per OOS
+
+# Monte Carlo config
+MC_RUNS       = 1000
+MC_CONFIDENCE = 0.95
+
 SYMBOL_CONFIG = {
     "BTCUSDT": {
-        "min_wick_pct":    0.004,   # 0.4% wick minimum
-        "max_risk_pct":    0.013,   # max 1.3% SL distance
-        "session_hours":   list(range(6, 23)),  # UTC 6-23 (London open to NY close)
-        "slope_long":     -0.1,     # slight downslope ok for longs (recoveries)
-        "slope_short":    -0.1,     # any slope ok for shorts
+        "min_wick_pct":  0.003,
+        "max_risk_pct":  0.025,
+        "session_hours": list(range(6, 23)),
+        "slope_long":   -0.3,
+        "slope_short":  -0.1,
+        "entry_window":  32,
     },
     "ETHUSDT": {
-        "min_wick_pct":    0.003,
-        "max_risk_pct":    0.02,
-        "session_hours":   list(range(0, 24)),  # all sessions (ETH works fine)
-        "slope_long":     -0.5,
-        "slope_short":    -0.5,
-    },
-    "SOLUSDT": {
-        "min_wick_pct":    0.004,
-        "max_risk_pct":    0.015,
-        "session_hours":   list(range(0, 24)),
-        "slope_long":     -0.5,
-        "slope_short":    -0.5,
+        "min_wick_pct":  0.003,
+        "max_risk_pct":  0.02,
+        "session_hours": list(range(0, 24)),
+        "slope_long":   -0.5,
+        "slope_short":  -0.5,
+        "entry_window":  ENTRY_WINDOW,
     },
 }
 
-# ─── EXCHANGE SETUP ────────────────────────────────────────────────────────────
+# ─── EXCHANGE ──────────────────────────────────────────────────────────────────
 
 def get_exchange():
     return ccxt.delta({
@@ -82,8 +85,7 @@ def get_exchange():
 
 
 def fetch_ohlcv(exchange, symbol_key, timeframe, days):
-    """Try multiple symbol aliases until one works."""
-    since = int((datetime.utcnow() - timedelta(days=days)).timestamp() * 1000)
+    since   = int((datetime.utcnow() - timedelta(days=days)).timestamp() * 1000)
     aliases = SYMBOL_ALIASES.get(symbol_key, [symbol_key])
 
     for sym in aliases:
@@ -122,7 +124,6 @@ def fetch_ohlcv(exchange, symbol_key, timeframe, days):
 # ─── INDICATORS ────────────────────────────────────────────────────────────────
 
 def add_emas(df):
-    """50 EMA trend filter, 200 EMA macro bias, slope for trend strength."""
     df["ema50"]       = df["close"].ewm(span=50,  adjust=False).mean()
     df["ema200"]      = df["close"].ewm(span=200, adjust=False).mean()
     df["ema50_slope"] = df["ema50"].pct_change(3) * 100
@@ -130,7 +131,7 @@ def add_emas(df):
 
 
 def detect_swing_highs(df, lookback=3):
-    highs = df["high"].values
+    highs  = df["high"].values
     result = np.zeros(len(highs), dtype=bool)
     for i in range(lookback, len(highs) - lookback):
         window = highs[i - lookback: i + lookback + 1]
@@ -140,7 +141,7 @@ def detect_swing_highs(df, lookback=3):
 
 
 def detect_swing_lows(df, lookback=3):
-    lows = df["low"].values
+    lows   = df["low"].values
     result = np.zeros(len(lows), dtype=bool)
     for i in range(lookback, len(lows) - lookback):
         window = lows[i - lookback: i + lookback + 1]
@@ -150,15 +151,11 @@ def detect_swing_lows(df, lookback=3):
 
 
 def detect_liquidity_grabs(df_4h, min_wick_pct=MIN_WICK_PCT, swing_lb=SWING_LOOKBACK):
-    """
-    Bearish grab: sweep above swing high, candle closes below → short bias
-    Bullish grab: sweep below swing low, candle closes above → long bias
-    """
     df = df_4h.copy()
     df["swing_high"] = detect_swing_highs(df, swing_lb)
     df["swing_low"]  = detect_swing_lows(df, swing_lb)
 
-    grabs = []
+    grabs      = []
     highs      = df["high"].values
     lows       = df["low"].values
     closes     = df["close"].values
@@ -179,7 +176,6 @@ def detect_liquidity_grabs(df_4h, min_wick_pct=MIN_WICK_PCT, swing_lb=SWING_LOOK
             if len(last_swing_lows) > 5:
                 last_swing_lows.pop(0)
 
-        # BEARISH GRAB
         for sh_time, sh_level in last_swing_highs:
             if sh_time >= timestamps[i]:
                 continue
@@ -194,7 +190,6 @@ def detect_liquidity_grabs(df_4h, min_wick_pct=MIN_WICK_PCT, swing_lb=SWING_LOOK
                 })
                 break
 
-        # BULLISH GRAB
         for sl_time, sl_level in last_swing_lows:
             if sl_time >= timestamps[i]:
                 continue
@@ -213,7 +208,6 @@ def detect_liquidity_grabs(df_4h, min_wick_pct=MIN_WICK_PCT, swing_lb=SWING_LOOK
 
 
 def detect_fvg(df_15m, idx):
-    """Fair Value Gap: 3-candle pattern."""
     if idx < 2:
         return None
     c0 = df_15m.iloc[idx - 2]
@@ -226,7 +220,6 @@ def detect_fvg(df_15m, idx):
 
 
 def detect_bos(df_15m, start_idx, direction, window=8):
-    """Break of Structure on 15M."""
     subset = df_15m.iloc[start_idx: start_idx + window]
     if len(subset) < 3:
         return None
@@ -243,23 +236,30 @@ def detect_bos(df_15m, start_idx, direction, window=8):
     return None
 
 
-# ─── BACKTEST ENGINE ───────────────────────────────────────────────────────────
+# ─── CORE BACKTEST ─────────────────────────────────────────────────────────────
 
-def run_backtest(symbol, df_4h, df_15m, sym_cfg=None):
+def run_backtest(symbol, df_4h, df_15m, sym_cfg=None, date_range=None):
+    """
+    Run backtest on given data slice.
+    date_range: (start, end) pd.Timestamp tuple for walk-forward slicing.
+    """
     if sym_cfg is None:
-        sym_cfg = SYMBOL_CONFIG.get(symbol, SYMBOL_CONFIG['ETHUSDT'])
-    print(f"\n{'='*60}")
-    print(f"  BACKTEST: {symbol}")
-    print(f"{'='*60}")
+        sym_cfg = SYMBOL_CONFIG.get(symbol, SYMBOL_CONFIG["ETHUSDT"])
+
+    # Slice data for walk-forward window
+    if date_range:
+        start, end = date_range
+        df_4h  = df_4h[(df_4h.index >= start)  & (df_4h.index < end)].copy()
+        df_15m = df_15m[(df_15m.index >= start) & (df_15m.index < end)].copy()
+
+    if len(df_4h) < 50 or len(df_15m) < 200:
+        return None
 
     df_4h  = add_emas(df_4h.copy())
     grabs  = detect_liquidity_grabs(df_4h)
 
     if grabs.empty:
-        print("  No grabs detected.")
         return None
-
-    print(f"  4H Grabs detected: {len(grabs)}")
 
     trades       = []
     equity       = ACCOUNT_SIZE
@@ -272,43 +272,41 @@ def run_backtest(symbol, df_4h, df_15m, sym_cfg=None):
         grab_type = grab["grab_type"]
         direction = "long" if grab_type == "bullish" else "short"
 
-        # ── SYMBOL-AWARE FILTERS ──────────────────────────────────
-        # 1. Wick size: grab must have meaningful rejection
         if grab["wick_pct"] < sym_cfg["min_wick_pct"]:
             continue
-
-        # 2. Session filter: skip low-liquidity hours (UTC)
         if grab_time.hour not in sym_cfg["session_hours"]:
             continue
 
-        # 3. Trend filter via ema50 slope
         try:
             slope_at_grab  = df_4h.loc[df_4h.index <= grab_time, "ema50_slope"].iloc[-1]
             ema200_at_grab = df_4h.loc[df_4h.index <= grab_time, "ema200"].iloc[-1]
         except:
             continue
+
         if direction == "long"  and grab["close"] < ema200_at_grab and slope_at_grab < sym_cfg["slope_long"]:
             continue
         if direction == "short" and grab["close"] > ema200_at_grab and slope_at_grab > abs(sym_cfg["slope_short"]):
             continue
 
-        # Daily limits
         day_key = grab_time.date()
-        if daily_trades.get(day_key, 0) >= MAX_TRADES_PER_DAY:    continue
-        if daily_loss.get(day_key, 0)   >= DAILY_LOSS_LIMIT * equity: continue
+        if daily_trades.get(day_key, 0) >= MAX_TRADES_PER_DAY:
+            continue
+        if daily_loss.get(day_key, 0) >= DAILY_LOSS_LIMIT * equity:
+            continue
 
         try:
             m15_start_idx = df_15m.index.searchsorted(grab_time)
         except:
             continue
-        if m15_start_idx >= len(df_15m) - ENTRY_WINDOW:
+
+        entry_window = sym_cfg.get("entry_window", ENTRY_WINDOW)
+        if m15_start_idx >= len(df_15m) - entry_window:
             continue
 
-        bos_idx = detect_bos(df_15m, m15_start_idx, direction, window=ENTRY_WINDOW)
+        bos_idx = detect_bos(df_15m, m15_start_idx, direction, window=entry_window)
         if bos_idx is None:
             continue
 
-        # FVG hunt after BOS
         entry_price = sl_price = tp_price = None
         entry_idx   = None
 
@@ -324,7 +322,7 @@ def run_backtest(symbol, df_4h, df_15m, sym_cfg=None):
                 sl_price    = grab["low"] * (1 - 0.001)
                 risk        = entry_price - sl_price
                 if risk <= 0: continue
-                if risk / entry_price > sym_cfg["max_risk_pct"]: continue  # skip wide SL
+                if risk / entry_price > sym_cfg["max_risk_pct"]: continue
                 tp_price  = entry_price + risk * MIN_RR
                 entry_idx = j
                 break
@@ -334,7 +332,7 @@ def run_backtest(symbol, df_4h, df_15m, sym_cfg=None):
                 sl_price    = grab["high"] * (1 + 0.001)
                 risk        = sl_price - entry_price
                 if risk <= 0: continue
-                if risk / entry_price > sym_cfg["max_risk_pct"]: continue  # skip wide SL
+                if risk / entry_price > sym_cfg["max_risk_pct"]: continue
                 tp_price  = entry_price - risk * MIN_RR
                 entry_idx = j
                 break
@@ -342,7 +340,6 @@ def run_backtest(symbol, df_4h, df_15m, sym_cfg=None):
         if entry_price is None or entry_idx is None:
             continue
 
-        # Walk forward: find SL or TP hit
         trade_result = exit_price = exit_time = None
 
         for k in range(entry_idx + 1, min(entry_idx + 50, len(df_15m))):
@@ -357,7 +354,6 @@ def run_backtest(symbol, df_4h, df_15m, sym_cfg=None):
         if trade_result is None:
             continue
 
-        # PnL
         risk_amount = equity * RISK_PER_TRADE
         if direction == "long":
             size = risk_amount / (entry_price - sl_price)
@@ -388,7 +384,211 @@ def run_backtest(symbol, df_4h, df_15m, sym_cfg=None):
         })
         equity_curve.append({"time": exit_time, "equity": equity})
 
+    if not trades:
+        return None
+
     return trades, equity_curve
+
+
+# ─── WALK-FORWARD VALIDATION ───────────────────────────────────────────────────
+
+def compute_stats(trades):
+    """Return dict of key metrics from trade list."""
+    if not trades:
+        return None
+    df   = pd.DataFrame(trades)
+    wins = df[df["result"] == "win"]
+    loss = df[df["result"] == "loss"]
+
+    total    = len(df)
+    winrate  = len(wins) / total * 100
+    total_pnl = df["pnl_usdt"].sum()
+    pf_denom  = abs(loss["pnl_usdt"].sum())
+    pf        = wins["pnl_usdt"].sum() / pf_denom if pf_denom > 0 else 0
+
+    peak = ACCOUNT_SIZE; max_dd = 0
+    for e in df["equity_after"].values:
+        if e > peak: peak = e
+        dd = (peak - e) / peak * 100
+        if dd > max_dd: max_dd = dd
+
+    return {
+        "total":         total,
+        "winrate":       winrate,
+        "total_pnl":     total_pnl,
+        "profit_factor": pf,
+        "avg_rr":        df["rr_achieved"].mean(),
+        "max_drawdown":  max_dd,
+        "final_equity":  df["equity_after"].iloc[-1],
+    }
+
+
+def walk_forward(symbol, df_4h, df_15m, sym_cfg, n_windows=WF_WINDOWS, train_pct=WF_TRAIN_PCT):
+    """
+    Rolling walk-forward: split data into n_windows, each with train/OOS split.
+    Returns list of (window_idx, train_stats, oos_stats).
+    """
+    print(f"\n  [Walk-Forward] {symbol} | {n_windows} windows | train={int(train_pct*100)}% OOS={int((1-train_pct)*100)}%")
+
+    all_times = df_4h.index
+    t_start   = all_times[0]
+    t_end     = all_times[-1]
+    total_td  = t_end - t_start
+    window_td = total_td / n_windows
+
+    results = []
+
+    for w in range(n_windows):
+        win_start  = t_start + window_td * w
+        win_end    = t_start + window_td * (w + 1)
+        split_time = win_start + (win_end - win_start) * train_pct
+
+        train_result = run_backtest(symbol, df_4h, df_15m, sym_cfg, date_range=(win_start, split_time))
+        oos_result   = run_backtest(symbol, df_4h, df_15m, sym_cfg, date_range=(split_time, win_end))
+
+        train_stats = compute_stats(train_result[0]) if train_result else None
+        oos_stats   = compute_stats(oos_result[0])   if oos_result   else None
+
+        status = "✓" if (oos_stats and oos_stats["profit_factor"] > 1.0) else "✗"
+        t_pf   = f"{train_stats['profit_factor']:.2f}" if train_stats else "N/A"
+        o_pf   = f"{oos_stats['profit_factor']:.2f}"   if oos_stats   else "N/A"
+        t_tr   = train_stats["total"] if train_stats else 0
+        o_tr   = oos_stats["total"]   if oos_stats   else 0
+
+        print(f"    Window {w+1}: {win_start.date()} → {win_end.date()} | "
+              f"Train PF={t_pf} ({t_tr}t) | OOS PF={o_pf} ({o_tr}t) {status}")
+
+        results.append({
+            "window":       w + 1,
+            "win_start":    win_start,
+            "split_time":   split_time,
+            "win_end":      win_end,
+            "train_stats":  train_stats,
+            "oos_stats":    oos_stats,
+        })
+
+    oos_valid  = [r for r in results if r["oos_stats"] and r["oos_stats"]["profit_factor"] > 1.0]
+    pass_rate  = len(oos_valid) / n_windows * 100
+    avg_oos_pf = np.mean([r["oos_stats"]["profit_factor"] for r in results if r["oos_stats"]]) if results else 0
+
+    print(f"    → OOS Pass Rate: {pass_rate:.0f}% | Avg OOS PF: {avg_oos_pf:.2f}")
+    if pass_rate >= 66:
+        print(f"    → VERDICT: STRATEGY VALIDATED ✓")
+    elif pass_rate >= 33:
+        print(f"    → VERDICT: MARGINAL — needs more data or filter tuning ⚠")
+    else:
+        print(f"    → VERDICT: STRATEGY FAILS OOS ✗ — likely curve-fitted")
+
+    return results, pass_rate, avg_oos_pf
+
+
+# ─── MONTE CARLO ───────────────────────────────────────────────────────────────
+
+def monte_carlo(trades, n_runs=MC_RUNS, confidence=MC_CONFIDENCE):
+    """
+    Shuffle trade order n_runs times using fixed-dollar risk.
+    With % equity compounding, sum is order-independent — so we use
+    fixed $10 risk per trade to make path matter.
+    """
+    if not trades or len(trades) < 5:
+        return None
+
+    df   = pd.DataFrame(trades)
+
+    # Recompute PnL as fixed $10 risk (makes shuffle order meaningful)
+    fixed_risk = ACCOUNT_SIZE * RISK_PER_TRADE  # $10
+    rr_list    = df["rr_achieved"].values.copy()
+    outcomes   = np.where(df["result"].values == "win", 1, -1)
+    # win = +RR * fixed_risk, loss = -fixed_risk
+    fixed_pnls = np.where(outcomes == 1,
+                          rr_list * fixed_risk,
+                          -fixed_risk)
+
+    # Add execution noise: ±20% RR variance (slippage, partial fills, early exits)
+    rr_noise   = np.random.normal(1.0, 0.20, (n_runs, len(rr_list)))
+    rr_noise   = np.clip(rr_noise, 0.3, 2.0)  # floor at 0.3R, cap at 2x
+
+    final_equities = []
+    max_drawdowns  = []
+    profit_factors = []
+
+    for run_idx in range(n_runs):
+        idx      = np.random.permutation(len(fixed_pnls))
+        shuffled_outcomes = outcomes[idx]
+        shuffled_rr       = rr_list[idx] * rr_noise[run_idx][idx]
+
+        noisy_pnls = np.where(shuffled_outcomes == 1,
+                              shuffled_rr * fixed_risk,
+                              -fixed_risk)
+
+        equity   = ACCOUNT_SIZE
+        peak     = ACCOUNT_SIZE
+        max_dd   = 0
+        gross_win = gross_loss = 0
+
+        for pnl in noisy_pnls:
+            equity += pnl
+            if equity > peak:
+                peak = equity
+            dd = (peak - equity) / peak * 100
+            if dd > max_dd:
+                max_dd = dd
+            if pnl > 0:
+                gross_win  += pnl
+            else:
+                gross_loss += abs(pnl)
+
+        final_equities.append(equity)
+        max_drawdowns.append(max_dd)
+        pf = gross_win / gross_loss if gross_loss > 0 else 0
+        profit_factors.append(pf)
+
+    alpha = 1 - confidence
+    return {
+        "final_equity": {
+            "mean":           np.mean(final_equities),
+            "median":         np.median(final_equities),
+            "low":            np.percentile(final_equities, alpha / 2 * 100),
+            "high":           np.percentile(final_equities, (1 - alpha / 2) * 100),
+            "p5":             np.percentile(final_equities, 5),
+            "p95":            np.percentile(final_equities, 95),
+            "pct_profitable": np.mean([e > ACCOUNT_SIZE for e in final_equities]) * 100,
+        },
+        "max_drawdown": {
+            "mean":  np.mean(max_drawdowns),
+            "p95":   np.percentile(max_drawdowns, 95),
+            "worst": np.max(max_drawdowns),
+        },
+        "profit_factor": {
+            "mean": np.mean(profit_factors),
+            "p5":   np.percentile(profit_factors, 5),
+            "p95":  np.percentile(profit_factors, 95),
+        },
+        "all_equities":  final_equities,
+        "all_drawdowns": max_drawdowns,
+    }
+
+
+def print_monte_carlo(symbol, mc):
+    if mc is None:
+        print(f"  {symbol}: Not enough trades for Monte Carlo.")
+        return
+    fe = mc["final_equity"]
+    dd = mc["max_drawdown"]
+    pf = mc["profit_factor"]
+
+    print(f"\n  ── {symbol} Monte Carlo ({MC_RUNS} runs, {int(MC_CONFIDENCE*100)}% CI) ──")
+    print(f"  Final Equity  mean=${fe['mean']:.0f}  p5=${fe['p5']:.0f}  p95=${fe['p95']:.0f}")
+    print(f"  % Runs Profitable: {fe['pct_profitable']:.1f}%")
+    print(f"  Max Drawdown  mean={dd['mean']:.1f}%  p95={dd['p95']:.1f}%  worst={dd['worst']:.1f}%")
+    print(f"  Profit Factor mean={pf['mean']:.2f}  p5={pf['p5']:.2f}  p95={pf['p95']:.2f}")
+
+    if fe["pct_profitable"] >= 80 and pf["p5"] > 1.0:
+        print(f"  → MC VERDICT: ROBUST EDGE ✓")
+    elif fe["pct_profitable"] >= 60:
+        print(f"  → MC VERDICT: MODERATE EDGE ⚠")
+    else:
+        print(f"  → MC VERDICT: FRAGILE — high luck dependency ✗")
 
 
 # ─── REPORTING ─────────────────────────────────────────────────────────────────
@@ -397,109 +597,171 @@ def print_stats(symbol, trades):
     if not trades:
         print(f"  {symbol}: No trades.")
         return
-    df      = pd.DataFrame(trades)
-    wins    = df[df["result"] == "win"]
-    losses  = df[df["result"] == "loss"]
-    total   = len(df)
-    winrate = len(wins) / total * 100
-
-    total_pnl     = df["pnl_usdt"].sum()
-    avg_win       = wins["pnl_usdt"].mean()   if len(wins)   > 0 else 0
-    avg_loss      = losses["pnl_usdt"].mean() if len(losses) > 0 else 0
-    pf_denom      = abs(losses["pnl_usdt"].sum())
-    profit_factor = wins["pnl_usdt"].sum() / pf_denom if pf_denom > 0 else 0
-
-    peak = ACCOUNT_SIZE; max_dd = 0
-    for e in df["equity_after"].values:
-        if e > peak: peak = e
-        dd = (peak - e) / peak * 100
-        if dd > max_dd: max_dd = dd
-
-    print(f"\n  ── {symbol} Results ──")
-    print(f"  Total trades:    {total}")
-    print(f"  Wins / Losses:   {len(wins)} / {len(losses)}")
-    print(f"  Win Rate:        {winrate:.1f}%")
-    print(f"  Total PnL:       ${total_pnl:.2f}")
-    print(f"  Avg Win:         ${avg_win:.2f}")
-    print(f"  Avg Loss:        ${avg_loss:.2f}")
-    print(f"  Profit Factor:   {profit_factor:.2f}")
-    print(f"  Avg RR:          {df['rr_achieved'].mean():.2f}")
-    print(f"  Max Drawdown:    {max_dd:.1f}%")
-    print(f"  Final Equity:    ${df['equity_after'].iloc[-1]:.2f}")
-
+    stats = compute_stats(trades)
+    df    = pd.DataFrame(trades)
     longs  = df[df["direction"] == "long"]
     shorts = df[df["direction"] == "short"]
+
+    print(f"\n  ── {symbol} Full-Sample Results ──")
+    print(f"  Total trades:    {stats['total']}")
+    print(f"  Win Rate:        {stats['winrate']:.1f}%")
+    print(f"  Total PnL:       ${stats['total_pnl']:.2f}")
+    print(f"  Profit Factor:   {stats['profit_factor']:.2f}")
+    print(f"  Avg RR:          {stats['avg_rr']:.2f}")
+    print(f"  Max Drawdown:    {stats['max_drawdown']:.1f}%")
+    print(f"  Final Equity:    ${stats['final_equity']:.2f}")
+
     if len(longs)  > 0:
-        print(f"  Long WR:         {len(longs[longs['result']=='win'])/len(longs)*100:.1f}% ({len(longs)} trades)")
+        lwr = len(longs[longs['result']=='win']) / len(longs) * 100
+        print(f"  Long WR:         {lwr:.1f}% ({len(longs)} trades)")
     if len(shorts) > 0:
-        print(f"  Short WR:        {len(shorts[shorts['result']=='win'])/len(shorts)*100:.1f}% ({len(shorts)} trades)")
+        swr = len(shorts[shorts['result']=='win']) / len(shorts) * 100
+        print(f"  Short WR:        {swr:.1f}% ({len(shorts)} trades)")
 
 
 def _scalar(val):
-    """Safely extract scalar from pandas Series or scalar."""
     if isinstance(val, pd.Series):
-        if len(val) == 0:
-            return None
+        if len(val) == 0: return None
         return float(val.iloc[-1])
     return float(val)
 
 
-def plot_results(all_results):
-    n = len(all_results)
-    fig, axes = plt.subplots(n, 1, figsize=(14, 5 * n))
-    if n == 1:
-        axes = [axes]
+# ─── PLOTTING ──────────────────────────────────────────────────────────────────
 
-    fig.suptitle("4H Liquidity Grab + 15M SMC Entry — Delta Exchange Backtest",
-                 fontsize=14, fontweight="bold", color="#eee")
+def plot_results(all_results, wf_data, mc_data):
+    n   = len(all_results)
+    fig = plt.figure(figsize=(16, 6 * n + 4 * n))
 
-    for ax, (symbol, trades, equity_curve) in zip(axes, all_results):
-        if not trades:
-            ax.set_title(f"{symbol} — No trades")
-            continue
+    BG    = "#0d1117"
+    PANEL = "#161b22"
+    GREEN = "#00d4aa"
+    RED   = "#ff4444"
+    BLUE  = "#4fc3f7"
+    GOLD  = "#ffd700"
+    GRAY  = "#aaaaaa"
 
-        df_t  = pd.DataFrame(trades)
-        eq_df = pd.DataFrame(equity_curve)
-        eq_df = eq_df.dropna(subset=["time"]).set_index("time").sort_index()
-        # deduplicate index
-        eq_df = eq_df[~eq_df.index.duplicated(keep="last")]
+    fig.patch.set_facecolor(BG)
+    fig.suptitle("4H Liquidity Grab + 15M SMC Entry — Delta Exchange",
+                 fontsize=15, fontweight="bold", color="#eee", y=0.98)
 
-        ax.plot(eq_df.index, eq_df["equity"], color="#00d4aa", linewidth=2, label="Equity")
-        ax.axhline(y=ACCOUNT_SIZE, color="#555", linestyle="--", linewidth=1, label="Start")
+    row = 0
+    total_rows = n * 3  # equity + wf + mc per symbol
 
-        # Scatter dots — safe scalar extraction
-        for _, row in df_t.iterrows():
-            t = row["exit_time"]
-            if pd.isnull(t) or t not in eq_df.index:
-                continue
-            eq_val = _scalar(eq_df.loc[t, "equity"])
-            if eq_val is None:
-                continue
-            color = "#00ff88" if row["result"] == "win" else "#ff4444"
-            ax.scatter(t, eq_val, color=color, s=30, zorder=5)
+    for sym_idx, (symbol, trades, equity_curve) in enumerate(all_results):
+        # ── Row 1: Equity Curve ────────────────────────────────────
+        ax1 = fig.add_subplot(total_rows, 1, row + 1)
+        row += 1
 
-        wins    = df_t[df_t["result"] == "win"]
-        total_pnl = df_t["pnl_usdt"].sum()
-        winrate   = len(wins) / len(df_t) * 100
-        final_eq  = df_t["equity_after"].iloc[-1]
+        if trades:
+            df_t  = pd.DataFrame(trades)
+            eq_df = pd.DataFrame(equity_curve).dropna(subset=["time"]).set_index("time").sort_index()
+            eq_df = eq_df[~eq_df.index.duplicated(keep="last")]
 
-        ax.set_title(
-            f"{symbol}  |  Trades: {len(df_t)}  |  WR: {winrate:.1f}%  "
-            f"|  PnL: ${total_pnl:.2f}  |  Final: ${final_eq:.2f}",
-            fontsize=11, color="#eee"
-        )
-        ax.set_ylabel("Equity (USDT)", color="#aaa")
-        ax.set_facecolor("#0d1117")
-        ax.tick_params(colors="#aaa")
-        for sp in ["top","right"]: ax.spines[sp].set_visible(False)
-        for sp in ["bottom","left"]: ax.spines[sp].set_color("#333")
-        ax.legend(loc="upper left", facecolor="#1a1a2e", edgecolor="#333", labelcolor="#ccc")
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
-        ax.grid(axis="y", color="#1e1e2e", linewidth=0.5)
+            ax1.fill_between(eq_df.index, ACCOUNT_SIZE, eq_df["equity"],
+                             where=(eq_df["equity"] >= ACCOUNT_SIZE),
+                             color=GREEN, alpha=0.15)
+            ax1.fill_between(eq_df.index, ACCOUNT_SIZE, eq_df["equity"],
+                             where=(eq_df["equity"] < ACCOUNT_SIZE),
+                             color=RED, alpha=0.15)
+            ax1.plot(eq_df.index, eq_df["equity"], color=GREEN, linewidth=2, label="Equity")
+            ax1.axhline(y=ACCOUNT_SIZE, color="#555", linestyle="--", linewidth=1, label="Start")
 
-    fig.patch.set_facecolor("#0d1117")
-    plt.tight_layout()
-    plt.savefig("backtest_results.png", dpi=150, bbox_inches="tight", facecolor="#0d1117")
+            for _, row_t in df_t.iterrows():
+                t = row_t["exit_time"]
+                if pd.isnull(t) or t not in eq_df.index: continue
+                eq_val = _scalar(eq_df.loc[t, "equity"])
+                if eq_val is None: continue
+                c = GREEN if row_t["result"] == "win" else RED
+                ax1.scatter(t, eq_val, color=c, s=25, zorder=5)
+
+            stats = compute_stats(trades)
+            ax1.set_title(
+                f"{symbol} Equity  |  Trades: {stats['total']}  |  WR: {stats['winrate']:.1f}%  "
+                f"|  PF: {stats['profit_factor']:.2f}  |  PnL: ${stats['total_pnl']:.2f}",
+                fontsize=11, color="#eee"
+            )
+
+        ax1.set_facecolor(PANEL)
+        ax1.set_ylabel("Equity (USDT)", color=GRAY)
+        ax1.tick_params(colors=GRAY)
+        for sp in ["top","right"]: ax1.spines[sp].set_visible(False)
+        for sp in ["bottom","left"]: ax1.spines[sp].set_color("#333")
+        ax1.legend(loc="upper left", facecolor=PANEL, edgecolor="#333", labelcolor="#ccc")
+        ax1.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+        ax1.grid(axis="y", color="#1e1e2e", linewidth=0.5)
+
+        # ── Row 2: Walk-Forward OOS PF bars ───────────────────────
+        ax2 = fig.add_subplot(total_rows, 1, row + 1)
+        row += 1
+
+        if symbol in wf_data:
+            wf_results, pass_rate, avg_oos_pf = wf_data[symbol]
+            windows = [r["window"] for r in wf_results]
+            train_pfs = [r["train_stats"]["profit_factor"] if r["train_stats"] else 0 for r in wf_results]
+            oos_pfs   = [r["oos_stats"]["profit_factor"]   if r["oos_stats"]   else 0 for r in wf_results]
+
+            x     = np.arange(len(windows))
+            width = 0.35
+            bars1 = ax2.bar(x - width/2, train_pfs, width, label="Train PF", color=BLUE,   alpha=0.7)
+            bars2 = ax2.bar(x + width/2, oos_pfs,   width, label="OOS PF",   color=GOLD,   alpha=0.7)
+            ax2.axhline(y=1.0, color=RED,   linestyle="--", linewidth=1, label="PF=1.0")
+            ax2.axhline(y=1.5, color=GREEN, linestyle=":",  linewidth=1, label="PF=1.5")
+
+            for bar in bars2:
+                h = bar.get_height()
+                c = GREEN if h >= 1.0 else RED
+                ax2.text(bar.get_x() + bar.get_width()/2., h + 0.02,
+                         f"{h:.2f}", ha="center", va="bottom", fontsize=8, color=c)
+
+            ax2.set_xticks(x)
+            ax2.set_xticklabels([f"W{w}" for w in windows], color=GRAY)
+            verdict = "VALIDATED ✓" if pass_rate >= 66 else ("MARGINAL ⚠" if pass_rate >= 33 else "FAILS ✗")
+            ax2.set_title(
+                f"{symbol} Walk-Forward  |  OOS Pass: {pass_rate:.0f}%  |  Avg OOS PF: {avg_oos_pf:.2f}  |  {verdict}",
+                fontsize=11, color="#eee"
+            )
+            ax2.legend(facecolor=PANEL, edgecolor="#333", labelcolor="#ccc", fontsize=8)
+
+        ax2.set_facecolor(PANEL)
+        ax2.set_ylabel("Profit Factor", color=GRAY)
+        ax2.tick_params(colors=GRAY)
+        for sp in ["top","right"]: ax2.spines[sp].set_visible(False)
+        for sp in ["bottom","left"]: ax2.spines[sp].set_color("#333")
+        ax2.grid(axis="y", color="#1e1e2e", linewidth=0.5)
+
+        # ── Row 3: Monte Carlo distribution ───────────────────────
+        ax3 = fig.add_subplot(total_rows, 1, row + 1)
+        row += 1
+
+        if symbol in mc_data and mc_data[symbol]:
+            mc = mc_data[symbol]
+            fe = mc["all_equities"]
+            ax3.hist(fe, bins=60, color=BLUE, alpha=0.7, edgecolor="none")
+            ax3.axvline(x=ACCOUNT_SIZE,          color=RED,   linestyle="--", linewidth=1.5, label=f"Start ${ACCOUNT_SIZE}")
+            ax3.axvline(x=mc["final_equity"]["p5"],  color=GOLD,  linestyle=":",  linewidth=1.5, label=f"p5  ${mc['final_equity']['p5']:.0f}")
+            ax3.axvline(x=mc["final_equity"]["p95"], color=GREEN, linestyle=":",  linewidth=1.5, label=f"p95 ${mc['final_equity']['p95']:.0f}")
+            ax3.axvline(x=mc["final_equity"]["mean"],color="#fff", linestyle="-",  linewidth=1,   label=f"mean ${mc['final_equity']['mean']:.0f}")
+
+            pct = mc["final_equity"]["pct_profitable"]
+            pf5 = mc["profit_factor"]["p5"]
+            verdict = "ROBUST ✓" if (pct >= 80 and pf5 > 1.0) else ("MODERATE ⚠" if pct >= 60 else "FRAGILE ✗")
+            ax3.set_title(
+                f"{symbol} Monte Carlo ({MC_RUNS} runs)  |  {pct:.1f}% profitable  "
+                f"|  p5 PF={pf5:.2f}  |  Worst DD={mc['max_drawdown']['worst']:.1f}%  |  {verdict}",
+                fontsize=11, color="#eee"
+            )
+            ax3.legend(facecolor=PANEL, edgecolor="#333", labelcolor="#ccc", fontsize=8)
+
+        ax3.set_facecolor(PANEL)
+        ax3.set_xlabel("Final Equity (USDT)", color=GRAY)
+        ax3.set_ylabel("Frequency", color=GRAY)
+        ax3.tick_params(colors=GRAY)
+        for sp in ["top","right"]: ax3.spines[sp].set_visible(False)
+        for sp in ["bottom","left"]: ax3.spines[sp].set_color("#333")
+        ax3.grid(axis="y", color="#1e1e2e", linewidth=0.5)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    plt.savefig("backtest_results.png", dpi=150, bbox_inches="tight", facecolor=BG)
     print("\n  Chart saved: backtest_results.png")
     plt.show()
 
@@ -517,38 +779,57 @@ def main():
     print("\n" + "="*60)
     print("  4H LIQUIDITY GRAB + 15M SMC ENTRY BACKTEST")
     print("  Exchange: Delta Exchange | BTC / ETH")
+    print("  Validation: Walk-Forward + Monte Carlo")
     print("="*60)
 
     exchange    = get_exchange()
     all_results = []
+    wf_data     = {}
+    mc_data     = {}
 
     print("\nFetching OHLCV data...")
 
     for symbol_key in SYMBOLS:
         print(f"\n[{symbol_key}]")
-        df_4h, sym_4h = fetch_ohlcv(exchange, symbol_key, "4h",  LOOKBACK_DAYS)
-        df_15m, _     = fetch_ohlcv(exchange, symbol_key, "15m", LOOKBACK_DAYS)
+        df_4h,  sym_4h = fetch_ohlcv(exchange, symbol_key, "4h",  LOOKBACK_DAYS)
+        df_15m, _      = fetch_ohlcv(exchange, symbol_key, "15m", LOOKBACK_DAYS)
 
         if df_4h is None or df_15m is None:
             print(f"  Skipping {symbol_key} — fetch failed")
             continue
         if len(df_4h) < 50 or len(df_15m) < 200:
-            print(f"  Skipping {symbol_key} — insufficient data ({len(df_4h)} 4H, {len(df_15m)} 15M candles)")
+            print(f"  Skipping {symbol_key} — insufficient data")
             continue
 
-        cfg = SYMBOL_CONFIG.get(symbol_key, SYMBOL_CONFIG['ETHUSDT'])
+        cfg = SYMBOL_CONFIG.get(symbol_key, SYMBOL_CONFIG["ETHUSDT"])
+
+        # Full-sample backtest
+        print(f"\n{'='*60}")
+        print(f"  BACKTEST: {symbol_key}")
+        print(f"{'='*60}")
         result = run_backtest(symbol_key, df_4h, df_15m, sym_cfg=cfg)
         if result is None:
+            print(f"  No trades generated.")
             continue
 
         trades, equity_curve = result
         print_stats(symbol_key, trades)
         all_results.append((symbol_key, trades, equity_curve))
 
+        # Walk-forward
+        wf_results = walk_forward(symbol_key, df_4h, df_15m, cfg)
+        wf_data[symbol_key] = wf_results
+
+        # Monte Carlo
+        print(f"\n  [Monte Carlo] {symbol_key} | {MC_RUNS} runs...")
+        mc = monte_carlo(trades)
+        mc_data[symbol_key] = mc
+        print_monte_carlo(symbol_key, mc)
+
     if all_results:
         print("\n" + "="*60)
         print("  Generating charts...")
-        plot_results(all_results)
+        plot_results(all_results, wf_data, mc_data)
         export_trades(all_results)
         print("\n  Done. Check backtest_results.png and backtest_trades.csv")
     else:
