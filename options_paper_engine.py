@@ -71,6 +71,17 @@ def _margin_per_lot(underlying: str) -> float:
     return MARGIN_PER_LOT.get(underlying, 80000)
 
 
+def _spread_max_loss(underlying: str, short_strike: int, long_strike: int,
+                     lots: int, net_credit_per_share: float) -> float:
+    """
+    Max loss (margin to block) for a vertical spread = (width - net credit) * qty,
+    floored at 0. Used when a short leg is hedged by a long leg.
+    """
+    width = abs(short_strike - long_strike)
+    qty   = lots * LOT_SIZE.get(underlying, 75)
+    return max(0.0, (width - net_credit_per_share) * qty)
+
+
 # ─── ENGINE ──────────────────────────────────────────────────────────────────
 
 class OptionsPaperEngine:
@@ -310,8 +321,18 @@ class OptionsPaperEngine:
 
             # ── SELL ─────────────────────────────────────────────────────────
             else:
+                credit = premium * qty
+
+                # Spread-aware margin: if a long leg in the same strategy hedges
+                # this short leg, block only the spread max-loss, not full SPAN.
                 margin_needed = _margin_per_lot(underlying) * lots
-                credit        = premium * qty
+                if strategy_tag:
+                    hedge = self._find_hedge_leg(strategy_tag, underlying, opt_type, strike)
+                    if hedge is not None:
+                        margin_needed = _spread_max_loss(
+                            underlying, strike, hedge["strike"], lots,
+                            net_credit_per_share=premium,
+                        )
 
                 if margin_needed > self.get_available_capital():
                     return False, (
@@ -322,8 +343,11 @@ class OptionsPaperEngine:
                 if key in self.state["open_positions"]:
                     return False, "SELL position already open for this contract. Close first."
 
-                self.state["used_margin"] += margin_needed
-                self.state["capital"]     += credit
+                self.state["used_margin"]      += margin_needed
+                # Credit is held separately, NOT added to spendable capital.
+                self.state["premium_received"] = round(
+                    self.state.get("premium_received", 0.0) + credit, 2
+                )
 
                 self.state["open_positions"][key] = {
                     "key":             key,
