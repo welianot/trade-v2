@@ -1,0 +1,24 @@
+{
+  "pending": [],
+  "approved": {},
+  "daily_public_count": {
+    "2026-06-30": 1
+  },
+  "activity": {
+    "8871581172": {
+      "username": "",
+      "last_seen": "2026-06-30T01:48:56.956890+00:00",
+      "last_action": "/mystatus",
+      "history": [
+        {
+          "at": "2026-06-30T01:48:56.943891+00:00",
+          "action": "/mystatus"
+        },
+        {
+          "at": "2026-06-30T01:48:56.956890+00:00",
+          "action": "/mystatus"
+        }
+      ]
+    }
+  }
+}
