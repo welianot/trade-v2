@@ -283,9 +283,9 @@ def run_backtest(symbol, df_4h, df_15m, sym_cfg=None, date_range=None):
         except:
             continue
 
-        if direction == "long"  and grab["close"] < ema200_at_grab and slope_at_grab < sym_cfg["slope_long"]:
+        if direction == "long" and not (grab["close"] > ema200_at_grab or slope_at_grab > 0):
             continue
-        if direction == "short" and grab["close"] > ema200_at_grab and slope_at_grab > abs(sym_cfg["slope_short"]):
+        if direction == "short" and not (grab["close"] < ema200_at_grab or slope_at_grab < 0):
             continue
 
         day_key = grab_time.date()

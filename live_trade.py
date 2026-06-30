@@ -334,10 +334,10 @@ def find_fresh_signal(sym_key, df_4h, df_15m, seen_grabs, equity, ex):
             seen_grabs[grab_key] = now_ts
             continue
 
-        if direction == "long" and slope < cfg["slope_long"]:
+        if direction == "long" and not (grab["close"] > ema200 or slope > 0):
             log.info(f"  [TREND] {sym_key} {grab_key} FAIL long: close={grab['close']:.0f} ema200={ema200:.0f} slope={slope:.3f} need>{cfg['slope_long']}")
             continue
-        if direction == "short" and slope > -cfg["slope_short"]:
+        if direction == "short" and not (grab["close"] < ema200 or slope < 0):
             log.info(f"  [TREND] {sym_key} {grab_key} FAIL short: close={grab['close']:.0f} ema200={ema200:.0f} slope={slope:.3f}")
         
             continue
