@@ -41,7 +41,7 @@ LOOKBACK_DAYS      = 365
 RISK_PER_TRADE     = 0.01
 ACCOUNT_SIZE       = 1000
 MIN_RR             = 3.0
-MAX_TRADES_PER_DAY = 2
+MAX_TRADES_PER_DAY = 10
 DAILY_LOSS_LIMIT   = 0.03
 
 SWING_LOOKBACK = 3
@@ -61,17 +61,17 @@ SYMBOL_CONFIG = {
         "min_wick_pct":  0.003,
         "max_risk_pct":  0.025,
         "session_hours": list(range(6, 23)),
-        "slope_long":   -0.3,
-        "slope_short":  -0.1,
+        "slope_long":   -1,
+        "slope_short":  -1,
         "entry_window":  32,
     },
     "ETHUSDT": {
         "min_wick_pct":  0.003,
         "max_risk_pct":  0.02,
         "session_hours": list(range(0, 24)),
-        "slope_long":   -0.5,
-        "slope_short":  -0.5,
-        "entry_window":  ENTRY_WINDOW,
+        "slope_long":   -1,
+        "slope_short":  -1,
+        "entry_window":  24,
     },
 }
 
@@ -310,7 +310,7 @@ def run_backtest(symbol, df_4h, df_15m, sym_cfg=None, date_range=None):
         entry_price = sl_price = tp_price = None
         entry_idx   = None
 
-        for j in range(bos_idx + 1, min(bos_idx + 8, len(df_15m) - 1)):
+        for j in range(bos_idx + 1, min(bos_idx + 20, len(df_15m) - 1)):
             fvg = detect_fvg(df_15m, j)
             if fvg is None:
                 continue

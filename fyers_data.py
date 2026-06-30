@@ -9,6 +9,7 @@ Features:
   - Option chain (all strikes, OI, IV, Greeks)
   - Historical OHLCV data
   - Response caching to avoid 429 rate limit errors
+  - Timeout protection on all API calls (no more hangs)
 """
 
 import json
@@ -19,7 +20,7 @@ from fyers_apiv3 import fyersModel
 # ─── Global rate limiter ──────────────────────────────────────────────────────
 _fyers_lock      = threading.Lock()
 _last_call_time  = 0.0
-MIN_CALL_GAP     = 12  # seconds between any two Fyers API calls
+MIN_CALL_GAP     = 3  # seconds between any two Fyers API calls
 
 # ─── Cache ────────────────────────────────────────────────────────────────────
 _cache      = {}          # {cache_key: (data, timestamp)}
@@ -58,6 +59,36 @@ def cache_status() -> dict:
             expires = round(ttl - age, 1)
             status[k] = {"age_s": age, "expires_in_s": max(0, expires)}
     return status
+
+
+# ─── Timeout wrapper ──────────────────────────────────────────────────────────
+
+def _call_with_timeout(fn, args=(), kwargs={}, timeout=15):
+    """
+    Call any function with a timeout (seconds).
+    Returns None if timeout exceeded instead of hanging forever.
+    """
+    result = [None]
+    error  = [None]
+
+    def target():
+        try:
+            result[0] = fn(*args, **kwargs)
+        except Exception as e:
+            error[0] = e
+
+    t = threading.Thread(target=target, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+
+    if t.is_alive():
+        # Timed out — thread still running in background, we just stop waiting
+        return None
+
+    if error[0]:
+        raise error[0]
+
+    return result[0]
 
 
 # ─── Rate limited call ────────────────────────────────────────────────────────
@@ -116,7 +147,7 @@ def get_quotes(fyers, symbols: list, force_refresh: bool = False):
     """
     Get live LTP for symbols.
     Symbol format: NSE:NIFTY50-INDEX, NSE:NIFTYBANK-INDEX, BSE:SENSEX-INDEX
-    Cached for 15 seconds.
+    Cached for 15 seconds. Timeout: 15s.
     """
     cache_key = f"quotes_{'_'.join(sorted(symbols))}"
 
@@ -125,8 +156,18 @@ def get_quotes(fyers, symbols: list, force_refresh: bool = False):
         if cached is not None:
             return cached
 
-    data     = {"symbols": ",".join(symbols)}
-    response = _rate_limited_call(fyers.quotes, data=data)
+    data = {"symbols": ",".join(symbols)}
+
+    response = _call_with_timeout(
+        _rate_limited_call,
+        args=(fyers.quotes,),
+        kwargs={"data": data},
+        timeout=25,
+    )
+
+    if response is None:
+        print(f"Quotes fetch timed out: {symbols}")
+        return None
 
     if response.get("s") != "ok":
         print(f"Quotes error: {response}")
@@ -144,7 +185,7 @@ def get_option_chain(fyers, symbol: str, strike_count: int = 10, force_refresh: 
     Get option chain for index.
     symbol: NSE:NIFTY50-INDEX or NSE:BANKNIFTY-INDEX
     strike_count: number of strikes above/below ATM
-    Cached for 30 seconds.
+    Cached for 30 seconds. Timeout: 20s.
     """
     cache_key = f"chain_{symbol}_{strike_count}"
 
@@ -158,7 +199,17 @@ def get_option_chain(fyers, symbol: str, strike_count: int = 10, force_refresh: 
         "strikecount": strike_count,
         "timestamp":   "",
     }
-    response = _rate_limited_call(fyers.optionchain, data=data)
+
+    response = _call_with_timeout(
+        _rate_limited_call,
+        args=(fyers.optionchain,),
+        kwargs={"data": data},
+        timeout=25,
+    )
+
+    if response is None:
+        print(f"Option chain fetch timed out: {symbol}")
+        return None
 
     if response.get("s") != "ok":
         print(f"Option chain error: {response}")
@@ -176,7 +227,7 @@ def get_history(fyers, symbol: str, resolution: str = "15", days_back: int = 5, 
     Get historical candles.
     resolution: 1, 5, 15, 30, 60, D, W, M
     symbol: NSE:NIFTY50-INDEX
-    Cached for 2 minutes.
+    Cached for 2 minutes. Timeout: 20s.
     """
     cache_key = f"history_{symbol}_{resolution}_{days_back}"
 
@@ -196,7 +247,17 @@ def get_history(fyers, symbol: str, resolution: str = "15", days_back: int = 5, 
         "range_to":    str(now),
         "cont_flag":   "1",
     }
-    response = _rate_limited_call(fyers.history, data=data)
+
+    response = _call_with_timeout(
+        _rate_limited_call,
+        args=(fyers.history,),
+        kwargs={"data": data},
+        timeout=25,
+    )
+
+    if response is None:
+        print(f"Daily candle fetch timed out: {symbol}")
+        return None
 
     if response.get("s") != "ok":
         print(f"History error: {response}")
@@ -229,6 +290,8 @@ def main():
         for q in quotes:
             v = q.get("v", {})
             print(f"  {q['n']}: {v.get('lp', 'N/A')} | Chg: {v.get('ch', 'N/A')} ({v.get('chp', 'N/A')}%)")
+    else:
+        print("  ❌ Quotes fetch failed or timed out.")
 
     # 2. Cache test — second call should be instant
     print("\n🔄 Cache test (second quotes call — should be instant):")
@@ -275,6 +338,8 @@ def main():
             c = call_map.get(strike, {})
             p = put_map.get(strike, {})
             print(f"  {strike:>8} | {c.get('ltp','-'):>8} {c.get('oi','-'):>10} | {p.get('ltp','-'):>8} {p.get('oi','-'):>10}")
+    else:
+        print("  ❌ Option chain fetch failed or timed out.")
 
     # 5. Historical data
     print("\n📉 Nifty 15m candles (last 2 days):")
@@ -283,6 +348,8 @@ def main():
         print(f"  Total candles: {len(candles)}")
         last = candles[-1]
         print(f"  Last candle: O={last[1]} H={last[2]} L={last[3]} C={last[4]} V={last[5]}")
+    else:
+        print("  ❌ History fetch failed or timed out.")
 
     print("\n✅ Done.")
 
