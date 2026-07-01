@@ -2,37 +2,40 @@
 fyers_data.py
 =============
 Fetch market data from Fyers API.
-Run fyers_auth.py first to generate access_token.
+Run fyers_auth.py once to generate tokens.
+Auto-refreshes access token daily using refresh token (valid 30 days).
 
 Features:
+  - Auto token refresh (no daily re-auth needed)
   - Live quotes (Nifty, BankNifty, Sensex)
   - Option chain (all strikes, OI, IV, Greeks)
   - Historical OHLCV data
   - Response caching to avoid 429 rate limit errors
-  - Timeout protection on all API calls (no more hangs)
+  - Timeout protection on all API calls
 """
 
 import json
 import time
 import threading
+from datetime import date
 from fyers_apiv3 import fyersModel
 
-# ─── Global rate limiter ──────────────────────────────────────────────────────
-_fyers_lock      = threading.Lock()
-_last_call_time  = 0.0
-MIN_CALL_GAP     = 3  # seconds between any two Fyers API calls
+# ─── Global rate limiter ─────────────────────────────────────────────────────
+_fyers_lock     = threading.Lock()
+_last_call_time = 0.0
+MIN_CALL_GAP    = 3  # seconds between any two Fyers API calls
 
-# ─── Cache ────────────────────────────────────────────────────────────────────
-_cache      = {}          # {cache_key: (data, timestamp)}
+# ─── Cache ───────────────────────────────────────────────────────────────────
+_cache      = {}
 _cache_lock = threading.Lock()
 
 CACHE_TTL = {
-    "quotes":  15,    # 15s — prices change fast
-    "chain":   30,    # 30s — OI changes slower
-    "history": 120,   # 2min — candles change every candle close
+    "quotes":  15,
+    "chain":   30,
+    "history": 120,
 }
 
-def _get_cache(key: str) -> object:
+def _get_cache(key: str):
     with _cache_lock:
         if key in _cache:
             data, ts, ttl = _cache[key]
@@ -40,19 +43,17 @@ def _get_cache(key: str) -> object:
                 return data
     return None
 
-def _set_cache(key: str, data: object, ttl: int):
+def _set_cache(key: str, data, ttl: int):
     with _cache_lock:
         _cache[key] = (data, time.time(), ttl)
 
 def clear_cache():
-    """Force clear all cached data. Call when fresh data needed."""
     with _cache_lock:
         _cache.clear()
 
 def cache_status() -> dict:
-    """Return cache status — useful for debugging."""
     with _cache_lock:
-        now = time.time()
+        now    = time.time()
         status = {}
         for k, (_, ts, ttl) in _cache.items():
             age     = round(now - ts, 1)
@@ -61,13 +62,9 @@ def cache_status() -> dict:
     return status
 
 
-# ─── Timeout wrapper ──────────────────────────────────────────────────────────
+# ─── Timeout wrapper ─────────────────────────────────────────────────────────
 
 def _call_with_timeout(fn, args=(), kwargs={}, timeout=15):
-    """
-    Call any function with a timeout (seconds).
-    Returns None if timeout exceeded instead of hanging forever.
-    """
     result = [None]
     error  = [None]
 
@@ -82,19 +79,15 @@ def _call_with_timeout(fn, args=(), kwargs={}, timeout=15):
     t.join(timeout=timeout)
 
     if t.is_alive():
-        # Timed out — thread still running in background, we just stop waiting
         return None
-
     if error[0]:
         raise error[0]
-
     return result[0]
 
 
-# ─── Rate limited call ────────────────────────────────────────────────────────
+# ─── Rate limited call ───────────────────────────────────────────────────────
 
 def _rate_limited_call(fn, *args, **kwargs):
-    """Wrap any Fyers API call with global rate limiter."""
     global _last_call_time
     with _fyers_lock:
         elapsed = time.time() - _last_call_time
@@ -123,22 +116,75 @@ CLIENT_ID  = _ENV.get("FYERS_CLIENT_ID", "")
 TOKEN_FILE = "fyers_token.txt"
 
 
-# ─── Init Fyers client ────────────────────────────────────────────────────────
+# ─── Auto-refresh helper ─────────────────────────────────────────────────────
+
+def _refresh_access_token(data: dict) -> dict:
+    """Use refresh_token to get new access_token. Updates data dict + saves file."""
+    try:
+        session = fyersModel.SessionModel(
+            client_id=data["client_id"],
+            secret_key=data["secret_key"],
+            redirect_uri=data.get("redirect_uri", "http://127.0.0.1:5000/"),
+            response_type="code",
+            grant_type="refresh_token",
+        )
+        session.set_token(data["refresh_token"])
+        resp = session.generate_token()
+
+        if resp.get("s") == "ok":
+            data["access_token"] = resp["access_token"]
+            data["saved_date"]   = str(date.today())
+            # Save updated token
+            with open(TOKEN_FILE, "w") as f:
+                json.dump(data, f, indent=2)
+            print(f"[Fyers] Access token auto-refreshed ({date.today()})")
+            return data
+        else:
+            print(f"[Fyers] Auto-refresh failed: {resp} — using existing token")
+            return data
+
+    except Exception as e:
+        print(f"[Fyers] Auto-refresh error: {e} — using existing token")
+        return data
+
+
+# ─── Init Fyers client ───────────────────────────────────────────────────────
 
 def get_fyers():
+    """
+    Load token, auto-refresh if expired (new day), return FyersModel.
+    Falls back gracefully if refresh fails.
+    """
     try:
         with open(TOKEN_FILE) as f:
-            access_token = f.read().strip()
+            raw = f.read().strip()
     except FileNotFoundError:
         print("ERROR: fyers_token.txt not found. Run fyers_auth.py first.")
         return None
 
-    fyers = fyersModel.FyersModel(
-        client_id=CLIENT_ID,
-        token=access_token,
+    # Handle old format (plain token string) vs new format (JSON)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        # Old plain-string format — wrap it, no refresh token available
+        print("[Fyers] Old token format detected. Run fyers_auth.py to enable auto-refresh.")
+        data = {
+            "access_token":  raw,
+            "refresh_token": "",
+            "client_id":     CLIENT_ID,
+            "secret_key":    _ENV.get("FYERS_SECRET_KEY", ""),
+            "saved_date":    "",
+        }
+
+    # Auto-refresh if token from previous day and refresh_token available
+    if data.get("saved_date") != str(date.today()) and data.get("refresh_token"):
+        data = _refresh_access_token(data)
+
+    return fyersModel.FyersModel(
+        client_id=data.get("client_id", CLIENT_ID),
+        token=data["access_token"],
         log_path="",
     )
-    return fyers
 
 
 # ─── Live quotes ─────────────────────────────────────────────────────────────
@@ -147,7 +193,7 @@ def get_quotes(fyers, symbols: list, force_refresh: bool = False):
     """
     Get live LTP for symbols.
     Symbol format: NSE:NIFTY50-INDEX, NSE:NIFTYBANK-INDEX, BSE:SENSEX-INDEX
-    Cached for 15 seconds. Timeout: 15s.
+    Cached 15s. Timeout 25s.
     """
     cache_key = f"quotes_{'_'.join(sorted(symbols))}"
 
@@ -156,12 +202,10 @@ def get_quotes(fyers, symbols: list, force_refresh: bool = False):
         if cached is not None:
             return cached
 
-    data = {"symbols": ",".join(symbols)}
-
     response = _call_with_timeout(
         _rate_limited_call,
         args=(fyers.quotes,),
-        kwargs={"data": data},
+        kwargs={"data": {"symbols": ",".join(symbols)}},
         timeout=25,
     )
 
@@ -178,14 +222,13 @@ def get_quotes(fyers, symbols: list, force_refresh: bool = False):
     return result
 
 
-# ─── Option chain ─────────────────────────────────────────────────────────────
+# ─── Option chain ────────────────────────────────────────────────────────────
 
 def get_option_chain(fyers, symbol: str, strike_count: int = 10, force_refresh: bool = False):
     """
     Get option chain for index.
     symbol: NSE:NIFTY50-INDEX or NSE:BANKNIFTY-INDEX
-    strike_count: number of strikes above/below ATM
-    Cached for 30 seconds. Timeout: 20s.
+    Cached 30s. Timeout 25s.
     """
     cache_key = f"chain_{symbol}_{strike_count}"
 
@@ -194,16 +237,10 @@ def get_option_chain(fyers, symbol: str, strike_count: int = 10, force_refresh: 
         if cached is not None:
             return cached
 
-    data = {
-        "symbol":      symbol,
-        "strikecount": strike_count,
-        "timestamp":   "",
-    }
-
     response = _call_with_timeout(
         _rate_limited_call,
         args=(fyers.optionchain,),
-        kwargs={"data": data},
+        kwargs={"data": {"symbol": symbol, "strikecount": strike_count, "timestamp": ""}},
         timeout=25,
     )
 
@@ -226,8 +263,7 @@ def get_history(fyers, symbol: str, resolution: str = "15", days_back: int = 5, 
     """
     Get historical candles.
     resolution: 1, 5, 15, 30, 60, D, W, M
-    symbol: NSE:NIFTY50-INDEX
-    Cached for 2 minutes. Timeout: 20s.
+    Cached 2min. Timeout 25s.
     """
     cache_key = f"history_{symbol}_{resolution}_{days_back}"
 
@@ -239,24 +275,22 @@ def get_history(fyers, symbol: str, resolution: str = "15", days_back: int = 5, 
     now     = int(time.time())
     from_ts = now - (days_back * 24 * 3600)
 
-    data = {
-        "symbol":      symbol,
-        "resolution":  resolution,
-        "date_format": "0",
-        "range_from":  str(from_ts),
-        "range_to":    str(now),
-        "cont_flag":   "1",
-    }
-
     response = _call_with_timeout(
         _rate_limited_call,
         args=(fyers.history,),
-        kwargs={"data": data},
+        kwargs={"data": {
+            "symbol":      symbol,
+            "resolution":  resolution,
+            "date_format": "0",
+            "range_from":  str(from_ts),
+            "range_to":    str(now),
+            "cont_flag":   "1",
+        }},
         timeout=25,
     )
 
     if response is None:
-        print(f"Daily candle fetch timed out: {symbol}")
+        print(f"History fetch timed out: {symbol}")
         return None
 
     if response.get("s") != "ok":
@@ -268,7 +302,7 @@ def get_history(fyers, symbol: str, resolution: str = "15", days_back: int = 5, 
     return result
 
 
-# ─── Main (demo) ──────────────────────────────────────────────────────────────
+# ─── Main (demo) ─────────────────────────────────────────────────────────────
 
 def main():
     fyers = get_fyers()
@@ -279,7 +313,6 @@ def main():
     print("  FYERS DATA TEST")
     print("=" * 50)
 
-    # 1. Live quotes
     print("\n📊 Live Quotes:")
     quotes = get_quotes(fyers, [
         "NSE:NIFTY50-INDEX",
@@ -291,65 +324,16 @@ def main():
             v = q.get("v", {})
             print(f"  {q['n']}: {v.get('lp', 'N/A')} | Chg: {v.get('ch', 'N/A')} ({v.get('chp', 'N/A')}%)")
     else:
-        print("  ❌ Quotes fetch failed or timed out.")
+        print("  ❌ Quotes fetch failed.")
 
-    # 2. Cache test — second call should be instant
-    print("\n🔄 Cache test (second quotes call — should be instant):")
-    t0     = time.time()
-    quotes = get_quotes(fyers, ["NSE:NIFTY50-INDEX"])
+    print("\n🔄 Cache test:")
+    t0 = time.time()
+    get_quotes(fyers, ["NSE:NIFTY50-INDEX"])
     print(f"  Returned in {round(time.time()-t0, 3)}s (cached)")
 
-    # 3. Cache status
     print("\n📦 Cache status:")
     for k, v in cache_status().items():
         print(f"  {k}: age={v['age_s']}s expires_in={v['expires_in_s']}s")
-
-    # 4. Nifty option chain
-    print("\n📈 Nifty Option Chain (ATM ±5 strikes):")
-    chain = get_option_chain(fyers, "NSE:NIFTY50-INDEX", strike_count=5)
-    if chain:
-        all_items = chain.get("optionsChain", [])
-
-        underlying_item = next((x for x in all_items if x.get("strike_price") == -1), {})
-        underlying_ltp  = underlying_item.get("ltp", "N/A")
-        print(f"  Underlying LTP: {underlying_ltp}")
-
-        expiry_list = chain.get("expiryData", [])
-        if expiry_list:
-            print(f"  Nearest expiry timestamp: {expiry_list[0].get('expiry', 'N/A')}")
-
-        vix = chain.get("indiavixData", {})
-        print(f"  India VIX: {vix.get('ltp', 'N/A')}")
-        print(f"  Total Call OI: {chain.get('callOi', 'N/A')}")
-        print(f"  Total Put OI:  {chain.get('putOi', 'N/A')}")
-
-        options = [x for x in all_items if x.get("strike_price", -1) > 0]
-        calls   = sorted([x for x in options if x.get("option_type") == "CE"], key=lambda x: x["strike_price"])
-        puts    = sorted([x for x in options if x.get("option_type") == "PE"], key=lambda x: x["strike_price"])
-
-        print(f"\n  {'Strike':>8} | {'CE LTP':>8} {'CE OI':>10} | {'PE LTP':>8} {'PE OI':>10}")
-        print(f"  {'-'*8}-+-{'-'*8}-{'-'*10}-+-{'-'*8}-{'-'*10}")
-
-        strikes  = sorted(set(x["strike_price"] for x in options))
-        call_map = {x["strike_price"]: x for x in calls}
-        put_map  = {x["strike_price"]: x for x in puts}
-
-        for strike in strikes:
-            c = call_map.get(strike, {})
-            p = put_map.get(strike, {})
-            print(f"  {strike:>8} | {c.get('ltp','-'):>8} {c.get('oi','-'):>10} | {p.get('ltp','-'):>8} {p.get('oi','-'):>10}")
-    else:
-        print("  ❌ Option chain fetch failed or timed out.")
-
-    # 5. Historical data
-    print("\n📉 Nifty 15m candles (last 2 days):")
-    candles = get_history(fyers, "NSE:NIFTY50-INDEX", resolution="15", days_back=2)
-    if candles:
-        print(f"  Total candles: {len(candles)}")
-        last = candles[-1]
-        print(f"  Last candle: O={last[1]} H={last[2]} L={last[3]} C={last[4]} V={last[5]}")
-    else:
-        print("  ❌ History fetch failed or timed out.")
 
     print("\n✅ Done.")
 
