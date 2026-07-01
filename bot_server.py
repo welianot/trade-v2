@@ -2499,10 +2499,38 @@ def _auto_trader_loop():
                 log.warning(f"[AUTO] {index} scan error: {e}")
 
 
+def _virtual_price_updater():
+    """
+    Background thread — updates live LTP for all virtual exchange positions
+    every 15 seconds using Fyers quotes. Keeps PnL current.
+    """
+    log.info("[VX] Virtual price updater started.")
+    while True:
+        try:
+            positions = vx.get_positions()
+            if positions:
+                from fyers_data import get_fyers, get_quotes
+                fyers = get_fyers()
+                if fyers:
+                    symbols = list({p["symbol"] for p in positions})
+                    quotes  = get_quotes(fyers, symbols)
+                    if quotes:
+                        ltp_map = {q["n"]: float(q["v"]["lp"]) for q in quotes if q.get("n") and q.get("v", {}).get("lp")}
+                        for sym, ltp in ltp_map.items():
+                            vx.update_price(sym, ltp)
+        except Exception as e:
+            log.debug(f"[VX] Price update error: {e}")
+        time.sleep(15)
+
+
 def start(tracker, daily_trades, daily_loss, exchange, kill_switch):
     init(tracker, daily_trades, daily_loss, exchange, kill_switch)
     engine = get_engine()
     start_monitor(get_fyers, engine, lambda msg: _send(CHAT_ID, msg))
+
+    # Virtual exchange live price updater
+    threading.Thread(target=_virtual_price_updater, name="VirtualPriceUpdater", daemon=True).start()
+    log.info("[VX] Virtual price updater thread started.")
 
     threading.Thread(target=_auto_trader_loop, name="OptionsAutoTrader", daemon=True).start()
     log.info("[AUTO] Options auto-trader thread started.")
