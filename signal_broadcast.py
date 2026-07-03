@@ -48,11 +48,12 @@ def _load_env():
 _ENV = _load_env()
 BOT_TOKEN = _ENV.get("TELEGRAM_BOT_TOKEN", "")
 ADMIN_ID = _ENV.get("TELEGRAM_ADMIN_CHAT_ID") or _ENV.get("TELEGRAM_CHAT_ID", "")
-PUBLIC_CHANNEL = _ENV.get("TELEGRAM_CHANNEL_ID", "")
+PUBLIC_CHANNEL  = _ENV.get("TELEGRAM_CHANNEL_ID", "")
 PREMIUM_CHANNEL = _ENV.get("TELEGRAM_PREMIUM_CHANNEL_ID", "")
-PREMIUM_INVITE = _ENV.get("TELEGRAM_PREMIUM_INVITE_LINK", "")
-PUBLIC_INVITE  = _ENV.get("TELEGRAM_PUBLIC_INVITE_LINK", "")
-FREE_LIMIT = int(_ENV.get("FREE_SIGNALS_PER_DAY", "5") or "5")
+PREMIUM_INVITE  = _ENV.get("TELEGRAM_PREMIUM_INVITE_LINK", "")
+PUBLIC_INVITE   = _ENV.get("TELEGRAM_PUBLIC_INVITE_LINK", "")
+FREE_LIMIT      = int(_ENV.get("FREE_SIGNALS_PER_DAY", "5") or "5")
+PREMIUM_LIMIT   = int(_ENV.get("PREMIUM_SIGNALS_PER_DAY", "15") or "15")
 
 
 def _today() -> str:
@@ -113,14 +114,31 @@ def _increment_public(state: dict):
 def broadcast_signal(text: str, tag: str = "crypto") -> dict:
     """
     Post signal to channels.
+    Free channel: up to FREE_LIMIT signals/day (default 5)
+    Premium channel: up to PREMIUM_LIMIT signals/day (default 15)
     Returns summary dict for logging.
     """
     state = _load_state()
-    result = {"premium": False, "public": False, "public_skipped": False}
+    result = {"premium": False, "public": False, "public_skipped": False, "premium_skipped": False}
 
+    # Premium channel
     if PREMIUM_CHANNEL:
-        result["premium"] = _post(PREMIUM_CHANNEL, text)
+        premium_count = int(state.get("daily_premium_count", {}).get(_today(), 0))
+        if premium_count < PREMIUM_LIMIT:
+            result["premium"] = _post(PREMIUM_CHANNEL, text)
+            if result["premium"]:
+                prem_counts = state.setdefault("daily_premium_count", {})
+                prem_counts[_today()] = premium_count + 1
+                # prune old days
+                for k in list(prem_counts.keys()):
+                    if k < _today():
+                        del prem_counts[k]
+                _save_state(state)
+        else:
+            result["premium_skipped"] = True
+            log.info(f"[BROADCAST] Premium cap reached ({PREMIUM_LIMIT}/day).")
 
+    # Public/free channel
     count = _public_count_today(state)
     if PUBLIC_CHANNEL:
         if count < FREE_LIMIT:

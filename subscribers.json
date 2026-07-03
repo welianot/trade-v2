@@ -2,7 +2,7 @@
   "pending": [],
   "approved": {},
   "daily_public_count": {
-    "2026-06-30": 1
+    "2026-07-02": 5
   },
   "activity": {
     "8871581172": {
@@ -20,5 +20,8 @@
         }
       ]
     }
+  },
+  "daily_premium_count": {
+    "2026-07-02": 4
   }
 }

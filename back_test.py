@@ -63,7 +63,7 @@ SYMBOL_CONFIG = {
         "session_hours": list(range(6, 23)),
         "slope_long":   -1,
         "slope_short":  -1,
-        "entry_window":  32,
+        "entry_window":  16,   # tightened from 32 — avoids stale entries
     },
     "ETHUSDT": {
         "min_wick_pct":  0.003,
@@ -71,7 +71,7 @@ SYMBOL_CONFIG = {
         "session_hours": list(range(0, 24)),
         "slope_long":   -1,
         "slope_short":  -1,
-        "entry_window":  24,
+        "entry_window":  16,   # tightened from 24
     },
 }
 

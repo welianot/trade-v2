@@ -144,11 +144,20 @@ def send_crypto_signal(sym_key: str, side: str, lots: int, entry: float,
         f"(expires {CRYPTO_CONFIRM_TIMEOUT}s)"
     )
     _send(CHAT_ID, sig_text)
-    broadcast_signal(
-        f"{emoji} <b>{sym_key} {direction}</b>\n"
-        f"Entry: {entry:.2f} | SL: {sl:.2f} | TP: {tp:.2f} | RR 1:{rr}",
-        tag="crypto",
-    )
+    # Only broadcast if this exact signal hasn't been broadcast before
+    # Prevents duplicate channel posts on bot restart
+    _sig_id = f"{sym_key}_{side}_{round(entry, 0)}_{round(sl, 0)}"
+    _broadcast_seen = getattr(send_crypto_signal, "_seen", set())
+    if _sig_id not in _broadcast_seen:
+        broadcast_signal(
+            f"{emoji} <b>{sym_key} {direction}</b>\n"
+            f"Entry: {entry:.2f} | SL: {sl:.2f} | TP: {tp:.2f} | RR 1:{rr}",
+            tag="crypto",
+        )
+        _broadcast_seen.add(_sig_id)
+        send_crypto_signal._seen = _broadcast_seen
+    else:
+        log.info(f"[BOT] Skipping duplicate broadcast for {_sig_id}")
     log.info(f"[BOT] Crypto signal sent for {sym_key} {direction}, waiting for YES/NO.")        
 
 
@@ -1353,6 +1362,71 @@ def _llm_reply(chat_id: str, user_msg: str) -> str:
     ctx_parts.append(f"\nToday crypto: {trades_today} trades | Loss: {loss_today:.4f} USD")
     paused = _kill_switch.is_set() if _kill_switch else False
     ctx_parts.append(f"Bot status: {'PAUSED' if paused else 'RUNNING'}")
+
+    # ── Live market data (options mode or general) ────────────────────────
+    mode = _chat_mode.get(chat_id, "general")
+    if mode in ("options", "general"):
+        try:
+            from fyers_data import get_fyers, get_quotes, get_option_chain
+            from options_scanner import SYMBOLS, STRIKE_STEP, _round_strike, _get_pdh_pdl_5m, _analyse_oi_chain, _determine_bias
+
+            fyers = get_fyers()
+            if fyers:
+                ctx_parts.append("\n=== LIVE MARKET DATA ===")
+
+                # VIX
+                try:
+                    vix_chain = get_option_chain(fyers, "NSE:NIFTY50-INDEX", strike_count=1)
+                    vix = float(vix_chain.get("indiavixData", {}).get("ltp", 0)) if vix_chain else None
+                    if vix:
+                        ctx_parts.append(f"India VIX: {vix:.1f}")
+                except Exception:
+                    vix = None
+
+                # Quick scan of each index
+                for index, fyers_sym in SYMBOLS.items():
+                    try:
+                        step = STRIKE_STEP[index]
+                        quotes = get_quotes(fyers, [fyers_sym])
+                        if not quotes:
+                            continue
+                        spot = float(quotes[0]["v"]["lp"])
+                        atm  = _round_strike(spot, step)
+                        pdh, pdl, last_close, _ = _get_pdh_pdl_5m(fyers, fyers_sym)
+
+                        # PCR from chain
+                        pcr = None
+                        try:
+                            chain = get_option_chain(fyers, fyers_sym, strike_count=5)
+                            if chain:
+                                call_oi = float(chain.get("callOi") or 0)
+                                put_oi  = float(chain.get("putOi") or 0)
+                                if call_oi > 10000:
+                                    pcr = round(put_oi / call_oi, 3)
+                                options = [x for x in chain.get("optionsChain", []) if x.get("strike_price", -1) > 0]
+                                oi_analysis = _analyse_oi_chain(options, atm, step)
+                                ce_wall = oi_analysis.get("ce_wall")
+                                pe_wall = oi_analysis.get("pe_wall")
+                                max_pain = oi_analysis.get("max_pain")
+                        except Exception:
+                            oi_analysis = {}
+                            ce_wall = pe_wall = max_pain = None
+
+                        bias, strength, _ = _determine_bias(vix, pcr, pdh, pdl, last_close, oi_analysis if 'oi_analysis' in dir() else {})
+
+                        ctx_parts.append(
+                            f"\n{index}: Spot={spot:.1f} ATM={atm} "
+                            f"PDH={pdh or 'N/A'} PDL={pdl or 'N/A'} Last5m={last_close or 'N/A'} "
+                            f"PCR={pcr or 'N/A'} Bias={bias.upper()}[{strength}] "
+                            f"CE_wall={ce_wall or 'N/A'} PE_wall={pe_wall or 'N/A'} MaxPain={max_pain or 'N/A'}"
+                        )
+                    except Exception as e:
+                        ctx_parts.append(f"{index}: data unavailable ({e})")
+
+                ctx_parts.append("=== END MARKET DATA ===")
+        except Exception as e:
+            log.debug(f"[LLM] market data injection failed: {e}")
+
     ctx_parts.append("=== END STATE ===")
 
     context_block = "\n".join(ctx_parts)
@@ -2173,7 +2247,21 @@ def _run():
         return
 
     log.info(f"[BOT] Starting. Model: {OPENROUTER_MODEL}")
-    offset = 0
+
+    # ── Drain stale updates on startup ───────────────────────────────────────
+    # Fetch all pending updates and advance offset WITHOUT processing them.
+    # This prevents old messages (ETH alerts etc.) from being re-handled after restart.
+    try:
+        stale = _get_updates(0)
+        if stale:
+            offset = stale[-1]["update_id"] + 1
+            log.info(f"[BOT] Drained {len(stale)} stale update(s) on startup. Starting from offset {offset}.")
+        else:
+            offset = 0
+    except Exception as e:
+        log.warning(f"[BOT] Startup drain failed: {e}")
+        offset = 0
+
     _send(CHAT_ID, "🚀 <b>Live Trader started.</b>\nType /help for commands.")
 
     while True:
@@ -2413,6 +2501,63 @@ def _handle_auto_confirm(chat_id: str, text: str) -> bool:
         if ok:
             with _auto_lock:
                 _auto_traded_today.add((sig["index"], sig.get("strategy", "")))
+            # Broadcast options signal to channels
+            try:
+                from signal_broadcast import broadcast_signal
+                index    = sig["index"]
+                bias     = sig["bias"].upper()
+                strategy = sig.get("strategy", "")
+                expiry   = sig.get("expiry", "")
+                spot     = sig.get("spot", 0)
+                vix      = sig.get("vix")
+                pcr      = sig.get("pcr")
+
+                if strategy in ("buy_ce", "buy_pe"):
+                    opt_type = sig.get("opt_type", "")
+                    strike   = sig.get("strike", "")
+                    premium  = sig.get("premium", 0)
+                    sl_p     = sig.get("sl_premium", 0)
+                    tp_p     = sig.get("tp_premium", 0)
+                    lots     = sig.get("lots", 1)
+                    action_emoji = "📈" if opt_type == "CE" else "📉"
+                    broadcast_text = (
+                        f"{action_emoji} <b>OPTIONS SIGNAL — {index}</b>\n\n"
+                        f"Bias: <b>{bias}</b> | Spot: {spot:.1f}\n"
+                        f"VIX: {vix:.1f if vix else 'N/A'} | PCR: {pcr or 'N/A'}\n\n"
+                        f"<b>BUY {strike}{opt_type} {expiry}</b>\n"
+                        f"Premium: ₹{premium} | Lots: {lots}\n"
+                        f"SL: ₹{sl_p} | TP: ₹{tp_p} [1:2 RR]\n\n"
+                        f"⚠️ <i>Paper trade signal only</i>"
+                    )
+                elif strategy in ("straddle", "strangle"):
+                    ce_p = sig.get("ce_premium", 0)
+                    pe_p = sig.get("pe_premium", 0)
+                    broadcast_text = (
+                        f"🔀 <b>OPTIONS SIGNAL — {index} {strategy.upper()}</b>\n\n"
+                        f"Bias: SIDEWAYS | Spot: {spot:.1f}\n"
+                        f"VIX: {vix:.1f if vix else 'N/A'}\n\n"
+                        f"CE premium: ₹{ce_p} | PE premium: ₹{pe_p}\n"
+                        f"Total: ₹{sig.get('premium', 0)}/lot\n\n"
+                        f"⚠️ <i>Paper trade signal only</i>"
+                    )
+                else:
+                    broadcast_text = None
+
+                if broadcast_text:
+                    result = broadcast_signal(broadcast_text, tag="options")
+                    channels = []
+                    if result.get("premium"):
+                        channels.append("premium ✅")
+                    elif result.get("premium_skipped"):
+                        channels.append("premium ⏭ (limit reached)")
+                    if result.get("public"):
+                        channels.append("free ✅")
+                    elif result.get("public_skipped"):
+                        channels.append("free ⏭ (limit reached)")
+                    if channels:
+                        _send(chat_id, f"📡 Broadcast: {' | '.join(channels)}")
+            except Exception as e:
+                log.warning(f"[BROADCAST] options signal failed: {e}")
         return True
 
     elif word == "NO":
@@ -2484,6 +2629,48 @@ def _auto_trader_loop():
                 with _auto_lock:
                     _auto_pending[CHAT_ID] = sig
                 _send(CHAT_ID, _format_signal_confirm(sig))
+
+                # Broadcast to channels immediately on signal detection (not waiting for YES)
+                try:
+                    index_    = sig["index"]
+                    bias_     = sig["bias"].upper()
+                    spot_     = sig.get("spot", 0)
+                    vix_      = sig.get("vix")
+                    pcr_      = sig.get("pcr")
+                    expiry_   = sig.get("expiry", "")
+                    opt_type_ = sig.get("opt_type", "")
+                    strike_   = sig.get("strike", "")
+                    premium_  = sig.get("premium", 0)
+                    sl_p_     = sig.get("sl_premium", 0)
+                    tp_p_     = sig.get("tp_premium", 0)
+                    lots_     = sig.get("lots", 1)
+                    lot_size_ = LOT_SIZE_MAP.get(index_, 50)
+                    cost_     = round(premium_ * lot_size_ * lots_)
+                    action_emoji_ = "📈" if opt_type_ == "CE" else "📉"
+                    vix_str_  = f"{vix_:.1f}" if vix_ else "N/A"
+                    pcr_str_  = f"{pcr_:.2f}" if pcr_ else "N/A"
+
+                    broadcast_text_ = (
+                        f"{action_emoji_} <b>OPTIONS SIGNAL — {index_}</b>\n\n"
+                        f"Bias: <b>{bias_}</b> | Spot: {spot_:.1f}\n"
+                        f"VIX: {vix_str_} | PCR: {pcr_str_}\n\n"
+                        f"<b>BUY {strike_}{opt_type_} {expiry_}</b>\n"
+                        f"Premium: ₹{premium_} | Lots: {lots_} (qty {lots_*lot_size_})\n"
+                        f"Cost: ₹{cost_}\n"
+                        f"SL: ₹{sl_p_} | TP: ₹{tp_p_} [1:2 RR]\n\n"
+                        f"⚠️ <i>Paper trade signal — verify before real trading</i>"
+                    )
+                    result_ = broadcast_signal(broadcast_text_, tag="options")
+                    channels_ = []
+                    if result_.get("premium"):   channels_.append("premium ✅")
+                    elif result_.get("premium_skipped"): channels_.append("premium ⏭")
+                    if result_.get("public"):    channels_.append("free ✅")
+                    elif result_.get("public_skipped"):  channels_.append("free ⏭")
+                    if channels_:
+                        _send(CHAT_ID, f"📡 Broadcast: {' | '.join(channels_)}")
+                    log.info(f"[AUTO] Broadcast result: {result_}")
+                except Exception as e:
+                    log.warning(f"[AUTO] Broadcast failed: {e}")
 
                 time.sleep(AUTO_CONFIRM_TIMEOUT + 2)
 

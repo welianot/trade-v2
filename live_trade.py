@@ -31,7 +31,6 @@ from datetime import datetime, timezone, timedelta
 
 import pandas as pd
 from telegram_alerts import send as tg
-from signal_broadcast import broadcast_signal
 from bot_server import start as start_bot
 from state_manager import (
     save_positions, save_daily,
@@ -54,13 +53,14 @@ CANDLES_4H   = 300
 CANDLES_15M  = 800
 
 # Adjustable parameters
-ATR_MULTIPLIER = 1.5          # SL distance = ATR * multiplier
-PARTIAL_RR     = 2.0          # RR for partial close (50%)
-ADX_STRONG     = 25           # ADX above this => use 1:4 RR
-ADX_MODERATE   = 20           # ADX above this => use 1:3 RR, else 1:2 RR
-VOLUME_SPIKE   = 1.2          # BOS volume must be > avg * multiplier
-ORDER_TIMEOUT  = 900          # cancel pending limit order after 15 min
-POLL_INTERVAL  = 30           # seconds between scans
+ATR_MULTIPLIER  = 1.5          # SL distance = ATR * multiplier
+PARTIAL_RR      = 2.0          # RR for partial close (50%)
+ADX_STRONG      = 25           # ADX above this => use 1:4 RR
+ADX_MODERATE    = 20           # ADX above this => use 1:3 RR, else 1:2 RR
+VOLUME_SPIKE    = 1.5          # BOS volume must be > avg * multiplier (raised from 1.2 — filters fake breakouts)
+ORDER_TIMEOUT   = 900          # cancel pending limit order after 15 min
+POLL_INTERVAL   = 30           # seconds between scans
+PRICE_PROXIMITY = 0.02         # max % gap between live price and FVG entry (2% = tight, avoids chasing)
 
 # Map strategy symbol keys → ccxt unified symbol + contract size
 SYMBOL_MAP = {
@@ -293,6 +293,222 @@ def prune_seen_grabs(seen_grabs, days=7):
         log.info(f"  Pruned {len(stale_keys)} old grab keys (>7 days)")
     return seen_grabs
 
+
+# ─── CONTINUATION + RETRACEMENT SIGNALS ─────────────────────────────────────
+
+def find_ema_retracement_signal(sym_key, df_4h, df_15m, ex):
+    """
+    Continuation/retracement entry:
+    - 4H trend is clear (price > EMA200 for longs, < EMA200 for shorts)
+    - ADX > 20 (trending, not ranging)
+    - 15M price pulls back to EMA50 or EMA21 and shows a rejection candle
+    - Entry at close of rejection candle
+    - SL below the pullback low (long) or above the pullback high (short)
+
+    This catches moves AFTER the trend is established — no liquidity grab needed.
+    """
+    cfg = SYMBOL_CONFIG.get(sym_key, SYMBOL_CONFIG["ETHUSDT"])
+
+    df_4h = add_emas(df_4h.copy())
+    df_15m = df_15m.copy()
+
+    # Add 15M EMAs
+    df_15m["ema21"] = df_15m["close"].ewm(span=21, adjust=False).mean()
+    df_15m["ema50"] = df_15m["close"].ewm(span=50, adjust=False).mean()
+
+    try:
+        ema200_4h  = df_4h["ema200"].iloc[-1]
+        ema50_4h   = df_4h["ema50"].iloc[-1]
+        slope_4h   = df_4h["ema50_slope"].iloc[-1]
+        last_close = df_4h["close"].iloc[-1]
+    except (IndexError, KeyError):
+        return None
+
+    # ADX filter — only trade in trending markets
+    try:
+        adx = calculate_adx(df_4h)
+    except Exception:
+        adx = 0
+    if adx < ADX_MODERATE:
+        log.info(f"  [RETRACE] {sym_key} ADX={adx:.1f} < {ADX_MODERATE} — ranging, skip")
+        return None
+
+    # Determine trend direction
+    is_bullish_trend = last_close > ema200_4h and slope_4h > 0
+    is_bearish_trend = last_close < ema200_4h and slope_4h < 0
+
+    if not is_bullish_trend and not is_bearish_trend:
+        log.info(f"  [RETRACE] {sym_key} no clear trend — skip")
+        return None
+
+    direction = "long" if is_bullish_trend else "short"
+
+    # Look at last 10 15M candles for retracement to EMA
+    lookback = 10
+    recent = df_15m.iloc[-lookback:]
+
+    for i in range(len(recent) - 1, 0, -1):
+        candle = recent.iloc[i]
+        prev   = recent.iloc[i - 1]
+        ema21  = recent["ema21"].iloc[i]
+        ema50  = recent["ema50"].iloc[i]
+
+        if direction == "long":
+            # Price touched EMA21 or EMA50 (low went below it) but closed above
+            touched_ema = candle["low"] <= ema21 * 1.001 or candle["low"] <= ema50 * 1.001
+            closed_above = candle["close"] > ema21
+            # Rejection candle: close > open (bullish candle after touching EMA)
+            is_rejection = candle["close"] > candle["open"]
+
+            if touched_ema and closed_above and is_rejection:
+                entry = candle["close"]
+                # SL below the wick low of the rejection candle
+                atr = calculate_atr(df_15m)
+                sl  = round(min(candle["low"], prev["low"]) - atr * 0.3, 2)
+                risk = entry - sl
+                if risk <= 0 or risk / entry > cfg["max_risk_pct"]:
+                    continue
+                rr = 4 if adx > ADX_STRONG else 3
+                tp = round(entry + risk * rr, 2)
+
+                # Live price check
+                try:
+                    ticker = ex.fetch_ticker(SYMBOL_MAP[sym_key]["ccxt"])
+                    live_px = ticker["last"]
+                    if abs(live_px - entry) / entry > PRICE_PROXIMITY * 1.5:
+                        continue
+                except Exception:
+                    pass
+
+                log.info(f"  [RETRACE LONG] {sym_key} EMA retracement at {entry:.2f} SL={sl:.2f} TP={tp:.2f} ADX={adx:.1f}")
+                return "long", entry, sl, tp
+
+        else:  # short
+            touched_ema = candle["high"] >= ema21 * 0.999 or candle["high"] >= ema50 * 0.999
+            closed_below = candle["close"] < ema21
+            is_rejection = candle["close"] < candle["open"]
+
+            if touched_ema and closed_below and is_rejection:
+                entry = candle["close"]
+                atr = calculate_atr(df_15m)
+                sl  = round(max(candle["high"], prev["high"]) + atr * 0.3, 2)
+                risk = sl - entry
+                if risk <= 0 or risk / entry > cfg["max_risk_pct"]:
+                    continue
+                rr = 4 if adx > ADX_STRONG else 3
+                tp = round(entry - risk * rr, 2)
+
+                try:
+                    ticker = ex.fetch_ticker(SYMBOL_MAP[sym_key]["ccxt"])
+                    live_px = ticker["last"]
+                    if abs(live_px - entry) / entry > PRICE_PROXIMITY * 1.5:
+                        continue
+                except Exception:
+                    pass
+
+                log.info(f"  [RETRACE SHORT] {sym_key} EMA retracement at {entry:.2f} SL={sl:.2f} TP={tp:.2f} ADX={adx:.1f}")
+                return "short", entry, sl, tp
+
+    return None
+
+
+def find_continuation_signal(sym_key, df_4h, df_15m, ex):
+    """
+    Continuation entry after 15M BOS — no liquidity grab required.
+    - 4H trend confirmed (EMA200 + slope)
+    - 15M breaks a recent swing high/low (BOS)
+    - 15M FVG forms after BOS
+    - Entry at FVG midpoint on retest
+
+    This catches the first pullback after a fresh breakout.
+    """
+    cfg = SYMBOL_CONFIG.get(sym_key, SYMBOL_CONFIG["ETHUSDT"])
+    df_4h  = add_emas(df_4h.copy())
+    df_15m = df_15m.copy()
+
+    try:
+        ema200_4h  = df_4h["ema200"].iloc[-1]
+        slope_4h   = df_4h["ema50_slope"].iloc[-1]
+        last_close = df_4h["close"].iloc[-1]
+    except (IndexError, KeyError):
+        return None
+
+    try:
+        adx = calculate_adx(df_4h)
+    except Exception:
+        adx = 0
+
+    is_bullish_trend = last_close > ema200_4h and slope_4h > 0
+    is_bearish_trend = last_close < ema200_4h and slope_4h < 0
+
+    if not is_bullish_trend and not is_bearish_trend:
+        return None
+
+    direction = "long" if is_bullish_trend else "short"
+
+    # Look for BOS in last 20 15M candles
+    scan_start = max(0, len(df_15m) - 20)
+    bos_idx = detect_bos(df_15m, scan_start, direction, window=16)
+    if bos_idx is None:
+        return None
+
+    # Volume confirmation at BOS
+    try:
+        vol_series = df_15m["volume"]
+        avg_vol    = vol_series.iloc[max(0, bos_idx - 20):bos_idx].mean()
+        if vol_series.iloc[bos_idx] < avg_vol * VOLUME_SPIKE:
+            log.info(f"  [CONT] {sym_key} BOS volume weak — skip")
+            return None
+    except Exception:
+        pass
+
+    # FVG after BOS
+    entry = sl = tp = None
+    for j in range(bos_idx + 1, min(bos_idx + 8, len(df_15m) - 1)):
+        fvg = detect_fvg(df_15m, j)
+        if fvg is None:
+            continue
+        fvg_type, fvg_top, fvg_bot = fvg
+        fvg_mid = (fvg_top + fvg_bot) / 2
+
+        if direction == "long" and fvg_type == "bullish":
+            entry = fvg_mid
+            atr   = calculate_atr(df_15m)
+            sl    = round(entry - atr * ATR_MULTIPLIER, 2)
+            risk  = entry - sl
+            if risk <= 0 or risk / entry > cfg["max_risk_pct"]:
+                continue
+            rr = 4 if adx > ADX_STRONG else 3 if adx > ADX_MODERATE else 2
+            tp = round(entry + risk * rr, 2)
+            break
+
+        elif direction == "short" and fvg_type == "bearish":
+            entry = fvg_mid
+            atr   = calculate_atr(df_15m)
+            sl    = round(entry + atr * ATR_MULTIPLIER, 2)
+            risk  = sl - entry
+            if risk <= 0 or risk / entry > cfg["max_risk_pct"]:
+                continue
+            rr = 4 if adx > ADX_STRONG else 3 if adx > ADX_MODERATE else 2
+            tp = round(entry - risk * rr, 2)
+            break
+
+    if entry is None:
+        return None
+
+    # Live price proximity
+    try:
+        ticker  = ex.fetch_ticker(SYMBOL_MAP[sym_key]["ccxt"])
+        live_px = ticker["last"]
+        if abs(live_px - entry) / entry > PRICE_PROXIMITY:
+            log.info(f"  [CONT] {sym_key} price {live_px:.2f} too far from FVG {entry:.2f}")
+            return None
+    except Exception:
+        pass
+
+    log.info(f"  [CONT {direction.upper()}] {sym_key} entry={entry:.2f} SL={sl:.2f} TP={tp:.2f} ADX={adx:.1f}")
+    return direction, entry, sl, tp
+
 def find_fresh_signal(sym_key, df_4h, df_15m, seen_grabs, equity, ex):
     """
     Returns (direction, entry, sl, tp) if fresh signal found, else None.
@@ -427,7 +643,7 @@ def find_fresh_signal(sym_key, df_4h, df_15m, seen_grabs, equity, ex):
         log.info(f"  [GATE] entry={entry:.2f} live={current_price:.2f} diff={price_diff_pct*100:.2f}% risk_pct={(abs(entry-sl)/entry)*100:.2f}%")
         
 
-        if price_diff_pct > 0.05:
+        if price_diff_pct > PRICE_PROXIMITY:
             log.info(f"  Live price {current_price:.2f} is {price_diff_pct*100:.2f}% away from FVG entry {entry:.2f} – waiting for retest")
             continue
         log.info(f"  Live price {current_price:.2f} is within {price_diff_pct*100:.2f}% of FVG – ready to fire")
@@ -438,7 +654,6 @@ def find_fresh_signal(sym_key, df_4h, df_15m, seen_grabs, equity, ex):
             f"Entry: {entry:.2f} | SL: {sl:.2f} | TP: {tp:.2f} (RR 1:{rr})"
         )
         tg(sig_msg)
-        broadcast_signal(sig_msg, tag="crypto")
         return direction, entry, sl, tp
 
     return None
@@ -778,6 +993,22 @@ def main():
             fetch_failures[sym_key] = 0
 
             signal = find_fresh_signal(sym_key, df_4h, df_15m, seen_grabs, equity, ex)
+            if signal is None:
+                # Fallback 1: EMA retracement entry (continuation in trend)
+                result = find_ema_retracement_signal(sym_key, df_4h, df_15m, ex)
+                if result:
+                    direction, entry, sl, tp = result
+                    signal = (direction, entry, sl, tp)
+                    log.info(f"  {sym_key}: EMA retracement signal")
+
+            if signal is None:
+                # Fallback 2: Continuation after fresh 15M BOS + FVG (no grab needed)
+                result = find_continuation_signal(sym_key, df_4h, df_15m, ex)
+                if result:
+                    direction, entry, sl, tp = result
+                    signal = (direction, entry, sl, tp)
+                    log.info(f"  {sym_key}: Continuation signal")
+
             if signal is None:
                 log.info(f"  {sym_key}: no signal.")
                 save_seen_grabs(seen_grabs)
