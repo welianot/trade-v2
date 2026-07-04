@@ -1,1 +1,16 @@
-{}
+{
+  "ETHUSDT": {
+    "ccxt_sym": "ETH/USD:USD",
+    "side": "buy",
+    "lots": 10.0,
+    "entry": 1733.7,
+    "sl": 1737.46,
+    "tp": 1776.08,
+    "opened_at": "2026-07-03T16:58:26.668509+00:00",
+    "contract_size": 0.01,
+    "trail_dist": 0.99,
+    "tp_partial": 1737.64,
+    "partial_filled": true,
+    "highest_px": 1738.45
+  }
+}
