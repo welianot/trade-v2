@@ -330,4 +330,3 @@ def start_monitor(fyers_getter, engine, notify_fn) -> threading.Event:
 
 
 # Fix missing import
-from typing import Optional

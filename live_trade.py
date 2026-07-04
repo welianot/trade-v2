@@ -16,6 +16,7 @@ Improvements integrated:
 
 import ccxt
 import csv
+import json
 import os
 import sys
 try:
@@ -38,6 +39,28 @@ from state_manager import (
     reconcile_positions,
     save_seen_grabs, load_seen_grabs,
 )
+
+# ─── Broadcast dedup (persisted across restarts) ─────────────────────────────
+
+BROADCAST_SEEN_FILE = "seen_broadcasts.json"
+
+def _load_broadcast_seen() -> set:
+    try:
+        with open(BROADCAST_SEEN_FILE, "r") as f:
+            data = json.load(f)
+            # Prune entries older than 24h
+            now_ts = time.time()
+            fresh = {k: v for k, v in data.items() if now_ts - v < 86400}
+            return set(fresh.keys()), fresh
+    except Exception:
+        return set(), {}
+
+def _save_broadcast_seen(seen_dict: dict):
+    try:
+        with open(BROADCAST_SEEN_FILE, "w") as f:
+            json.dump(seen_dict, f)
+    except Exception:
+        pass
 from back_test import (
     add_emas, detect_liquidity_grabs, detect_bos, detect_fvg,
     SYMBOL_CONFIG, MIN_RR, RISK_PER_TRADE, ACCOUNT_SIZE,
@@ -911,6 +934,8 @@ def main():
 
     log.info("\nWarm-start done. Watching for NEW signals only.\n")
     fetch_failures = {}
+    broadcast_seen, broadcast_seen_dict = _load_broadcast_seen()
+    log.info(f"Loaded {len(broadcast_seen)} broadcast-seen entries from disk.")
 
     # Main loop
     pending_orders = {}
@@ -1020,6 +1045,25 @@ def main():
             if lots < 1:
                 log.info(f"  {sym_key}: lot size < 1, skip.")
                 continue
+
+            rr   = round(abs(tp - entry) / abs(entry - sl), 1) if abs(entry - sl) > 0 else 2.0
+
+            # Deduplicate: only broadcast each signal once (survives restarts)
+            _sig_id = f"{sym_key}_{side}_{round(entry, 0)}_{round(sl, 0)}"
+            if _sig_id in broadcast_seen:
+                log.info(f"  {sym_key}: signal already broadcast ({_sig_id}), skipping.")
+            else:
+                # Broadcast signal to channels and send Telegram alert
+                try:
+                    from bot_server import send_crypto_signal
+                    send_crypto_signal(sym_key, side, lots, entry, sl, tp, rr, 10, contract_size)
+                except Exception as e:
+                    log.warning(f"  broadcast failed: {e}")
+                    tg(f"🔍 <b>SIGNAL</b>: {sym_key} {side.upper()}\nEntry: {entry:.2f} | SL: {sl:.2f} | TP: {tp:.2f} (RR 1:{rr})")
+                # Mark as broadcast
+                broadcast_seen.add(_sig_id)
+                broadcast_seen_dict[_sig_id] = time.time()
+                _save_broadcast_seen(broadcast_seen_dict)
 
             log.info(f"  ENTERING {sym_key} {side.upper()} {lots}L | entry~{entry:.2f} SL={sl:.2f} TP={tp:.2f}")
             try:

@@ -1,8 +1,14 @@
 {
   "pending": [],
-  "approved": {},
+  "approved": {
+    "7530533644": {
+      "tier": "premium",
+      "username": "unknown",
+      "approved_at": "2026-07-03T11:59:00.505622+00:00"
+    }
+  },
   "daily_public_count": {
-    "2026-07-02": 5
+    "2026-07-03": 5
   },
   "activity": {
     "8871581172": {
@@ -19,9 +25,24 @@
           "action": "/mystatus"
         }
       ]
+    },
+    "7530533644": {
+      "username": "",
+      "last_seen": "2026-07-03T11:58:43.312150+00:00",
+      "last_action": "/subscribe premium",
+      "history": [
+        {
+          "at": "2026-07-03T11:58:43.300156+00:00",
+          "action": "/start"
+        },
+        {
+          "at": "2026-07-03T11:58:43.312150+00:00",
+          "action": "/subscribe premium"
+        }
+      ]
     }
   },
   "daily_premium_count": {
-    "2026-07-02": 4
+    "2026-07-03": 15
   }
 }
